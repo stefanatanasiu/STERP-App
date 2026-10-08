@@ -1,0 +1,7 @@
+# STERP - acceptance scenarios that are shown by hand rather than by an automated test.
+# One entry per line:  AC-nnn | why it is manual and how it is demonstrated
+# build\ac-coverage.ps1 reports these as "manual/UI" instead of "uncovered"; anything that is
+# neither tagged in a test nor listed here is reported as having no coverage at all.
+# Lines that do not start with an AC id are ignored, so comments are free.
+#
+# (empty: every scenario in the specification currently has at least one tagged automated test)

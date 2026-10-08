@@ -1,0 +1,21 @@
+# Build outputs - recreated by build\build-*.ps1
+/bin/
+/obj/
+dotnet/**/bin/
+dotnet/**/obj/
+
+# Batch run output - recreated by jobs\SETENV.cmd and the batch programs
+/run/*
+!/run/podemo-reset.sql
+
+# Visual Studio / .NET tooling
+.vs/
+*.user
+*.suo
+TestResults/
+packages/
+
+# OS / editor noise
+Thumbs.db
+desktop.ini
+.DS_Store

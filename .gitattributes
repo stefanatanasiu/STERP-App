@@ -1,0 +1,7 @@
+# Windows-only project: normalise text to LF in the repository, check out as CRLF everywhere
+* text=auto eol=crlf
+
+# Legacy fixed-format and sample interface files: keep the exact bytes
+data/** -text
+
+*.png binary

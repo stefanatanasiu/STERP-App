@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\STERP.Legacy.props" />
+  <PropertyGroup>
+    <ProjectGuid>{A1C00006-0000-4000-8000-000000000006}</ProjectGuid>
+    <OutputType>Exe</OutputType>
+    <RootNamespace>STERP.Tests</RootNamespace>
+    <AssemblyName>STERP.Tests</AssemblyName>
+    <StartupObject>STERP.Tests.Harness</StartupObject>
+    <LangVersion>7.3</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\STERP.Common\STERP.Common.csproj">
+      <Project>{A1C00001-0000-4000-8000-000000000001}</Project>
+      <Name>STERP.Common</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\STERP.Data\STERP.Data.csproj">
+      <Project>{A1C00002-0000-4000-8000-000000000002}</Project>
+      <Name>STERP.Data</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\STERP.CobolInterop\STERP.CobolInterop.csproj">
+      <Project>{A1C00003-0000-4000-8000-000000000003}</Project>
+      <Name>STERP.CobolInterop</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\STERP.Business\STERP.Business.vbproj">
+      <Project>{A1C00004-0000-4000-8000-000000000004}</Project>
+      <Name>STERP.Business</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <ItemGroup>
+    <Compile Include="**\*.cs" Exclude="obj\**\*.cs;bin\**\*.cs" />
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.CSharp.targets" />
+</Project>

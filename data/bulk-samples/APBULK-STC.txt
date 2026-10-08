@@ -1,0 +1,11 @@
+* STERP bulk purchase document load - pipe delimited
+* TYPE|supplier|reference|docdate|duedate|ccy|net|vat|gross|description|account
+*      two optional trailing fields may follow the account:
+*      |order|nonporeason  - a line with no order needs an approved
+*      D-08 category; when both are blank APBULK defaults the category.
+INV|S0001|BULK-2026-001|20260915|20261015|GBP|1200.00|240.00|1440.00|Steel stock, bulk load|5000
+INV|S0002|BULK-2026-002|20260916|20261016|GBP|800.00|160.00|960.00|Tube and section|5000
+CRN|S0001|BULK-CR-2026-001|20260920|20260920|GBP|100.00|20.00|120.00|Short delivery credit|5000
+INV|S0001|BULK-2026-001|20260915|20261015|GBP|1200.00|240.00|1440.00|Deliberate repeat of line 3|5000
+INV|S0003|BULK-2026-003|20260917|20261017|GBP|500.00|100.00|700.00|Totals deliberately wrong|5000
+PAY|PP-26-0007|||||||||

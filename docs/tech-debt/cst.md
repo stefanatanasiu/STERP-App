@@ -1,0 +1,65 @@
+# Costing module (`cst`) — intentional legacy texture and real debt
+
+Deliberate period flavour is marked **[texture]**; genuine shortcuts that a modernisation should
+fix are marked **[debt]**.
+
+| # | File / pattern | Why it is there | Modernisation hint |
+|---|---|---|---|
+| 1 | `cobol\online\cst\*.cob` — `PERFORM` of `SECTION`s with numbered paragraphs (`0100-INITIALISE`, `9100-BAD-FUNCTION`) and `GO TO xxx-EXIT` early returns | **[texture]** RM/COBOL house style of the 1997 costing suite; the Items module next door reads the same way | Structured early-return or guard clauses; the numbered sections map cleanly onto private methods |
+| 2 | `COSTNORM`, `FIFOVAL`, `MWAVAL`, `STDCOST`, `WIPCALC`, `VARIANCE`, `COSTROLL` each carry their own copy of `8000-SINGLE-ROW`, `8100-EXECUTE`, `8900-SQL-ERROR`, `9000-REJECT` | **[debt]** copy-and-paste rather than a shared internal subprogram, exactly as it accreted between 1997 and 2013 | One `CSTSQL` helper subprogram, or a repository class per aggregate |
+| 3 | `FIFOVAL` `FV-LINES OCCURS 30`, `COSTROLL` `CR-LINES OCCURS 20`, `VARIANCE` `VA-LINES OCCURS 15`, `WHATIF` `WI-VARIANTS OCCURS 6` | **[texture]** hard-coded table limits; an issue spanning more than thirty layers is refused with `CST0206` rather than handled | Streamed/paged results; the limit becomes a page size, not a business rule |
+| 4 | `CA-FUNCTION` is `PIC X(8)`, so budget approval is `APPRBUDG` and the overhead rate function is `OVHRATE` | **[debt]** cryptic verbs forced by a 1991 COMMAREA header. The unit test caught two silently truncated names during development | A string or enum command, validated at compile time |
+| 5 | `WS-AMT1`, `WS-AMT2`, `WS-CALC-1`..`WS-CALC-3`, `WS-QTY1` in `CSTWORK.cpy` reused for unrelated purposes within a program | **[texture]** classic scratch variables; cheap in 1997, hostile to a reader now | Named local variables with a single meaning each |
+| 6 | Y2K change-log entries (`1999-11-30 KMP Y2K - FOUR DIGIT ...`) in every banner | **[texture]** the module really would carry them | Keep as history in version control, drop from source |
+| 7 | `JOBCOST` `6600-CHECK-WIP` hard-codes fiscal year **2026** and defaults the period to **7** when the caller supplies none | **[debt]** a genuine shortcut — the current period should come from `fin.Period` via `PERIODCK` | Resolve the open period from the business date through the period service |
+| 8 | `JOBCOST` `3100-INSERT-COST` reuses `JC-BUDGET-VERSION` and `JC-JOB-LEVEL` as the fiscal year and period bind variables and then forces both to NULL | **[debt]** a parameter-slot squeeze from an era of fixed COMMAREAs; the fiscal period of a cost transaction is therefore never populated by this path | Add explicit `JC-FISCAL-YEAR` / `JC-PERIOD-NO` fields and derive them from the recognition date |
+| 9 | `WIPCALC` `1300-BUCKET` recognises transfers, returns, scrap and write-offs by **element code string** (`TRANSFER`, `MATRETURN`, `SCRAP`, `WRITEOFF`) before falling back to `ElementType` | **[debt]** magic codes embedded in COBOL instead of a flag on `cst.CostElement` | Add a `WipTreatment` column to `cst.CostElement` and drive the bucket from data |
+| 10 | `MARGIN` `3000-ORDER` calls `cst.usp_OrderMargin`, which is **not written yet** | **[debt]** the COBOL interface was published before the aggregation proc existed; the function currently returns `12` with a SQL error | Write the procedure (see `cst-procs` todo) or remove the function from the copybook |
+| 11 | `FIFOVAL` `2300-APPLY-LAYERS` zeroes `LandedAdjustmentGBP` when it rewrites a partially consumed layer, having already folded that adjustment into the remaining value | **[debt]** correct in total but it loses the landed/goods split on the surviving layer | Keep goods value and landed adjustment as separate running columns |
+| 12 | `STDCOST` `2300-CHANGE-STATUS` builds three different `UPDATE` statements and then binds five parameters positionally, with a filler `? IS NOT NULL` predicate so that the `ACTIVATE` variant has the same parameter count | **[debt]** a parameter-count hack to keep one bind routine | Separate bind routines per statement, or a single proc `cst.usp_SetCostSetStatus` |
+| 13 | Duplicated rule: the element reconciliation of CST-002 is enforced in `COSTNORM` `4000-ELEMENT-PROOF` and again (differently) by `cst.StandardCostElement` totals | **[texture]** the classic "rule in two places" legacy trait | One owner — a check constraint or a single domain service |
+| 14 | `COSTNORM` `1300-LASTPUR-BASIS` returns `04` and a warning whenever a last purchase price is used | **[texture]** defensive chattiness from CR1021 | A basis-quality attribute on the result rather than a warning return code |
+| 15 | Commit flag `"T"` ("write inside the caller's transaction") on `FIFOVAL`/`MWAVAL`/`JOBCOST` | **[debt]** transaction ownership is decided by a character in a COMMAREA, which is easy to get wrong | Ambient transaction/unit-of-work; the caller should not have to say |
+| 16 | `cobol\tests\cst\TCSTCALC.cob` has to be run after a separate `build-cobol.ps1 -Module itm` because test executables link every `libst_*.a` and a concurrent Items build can leave `libst_itm.a` empty | **[debt]** build-system coupling, not a product defect | Link only the module's own library plus declared dependencies |
+
+## Not yet implemented (tracked as `cst-*` todos, not debt)
+
+The WinForms screens (`cst-net`), the DB-backed COBOL tests `TCSTVAL`/`TCSTJOB` (`cst-tests`), the
+SQL tests (`cst-sqltests`) and the WIP roll-forward batch `CSTWIPRF` (`cst-wiprf`) are outstanding.
+Everything else — the thirteen LINKable programs, the four batch reports, the procedures, views,
+event map, maintenance definitions and demo data — is in place, and every requirement CST-001 to
+CST-026 is tagged in implementation code.
+
+## Landed cost, NRV and scenarios (added 2026-10-06)
+
+| File | Pattern | Why it is there | Modernisation hint |
+|---|---|---|---|
+| `cobol\online\cst\LANDED.cob` | The allocation set is deleted and re-inserted whole on every `ESTIMATE`/`ACTUAL`, rather than updated row by row. | A 1999 program had no cheap way to diff two allocation sets, and leaving a half-replaced set behind was the worse failure. | Replace with a `MERGE` on `(LandedCostId, LineNum)` once the allocation set is keyed on the receipt line rather than the ordinal. |
+| `cobol\online\cst\LANDED.cob` | `LD-COMMIT = "N"` with lines supplied skips the register read entirely, so a simulation never touches the database. | Keeps the valuation report and the unit tests runnable with no connection — the same trick the 1997 suite used for overnight re-runs. | A read-only replica or a pure function would express this without a mode flag. |
+| `cobol\online\cst\LANDED.cob` | The stock share is computed here but applied by `FIFOVAL "LANDADJ"` / `MWAVAL "REVALUE"`. | Deliberate: one program decides the split, another owns the pool. It does mean two calls to finish one business act. | A single `AttributeLandedCost` command that emits both events transactionally. |
+| `cobol\online\cst\NRVTEST.cob` | `NR-REVERSAL-GBP` is an input on `REVERSE` and an output everywhere else, so initialisation has to make an exception for it. | The 1998 commarea had one field for "the reversal", and splitting it would have broken every caller. | Separate `RequestedReversal` and `AppliedReversal` fields. |
+| `cobol\online\cst\NRVTEST.cob` | When no earlier impairment is named and no allowance is on file, the prior write-down is inferred as `(original - carrying) x quantity`. | Historic stock converted from the 1992 system has no impairment rows, only a reduced carrying value. | Backfill `cst.Impairment` from the conversion and delete the inference. |
+| `cobol\online\cst\WHATIF.cob` | Material and rate factors are applied to the rolled-up result, not to the stored rates. | A what-if must not write, and in 1999 there was no way to override a rate in memory for the duration of a call. | Pass an override set into the roll-up service; the factors then apply at the right level of the tree. |
+| `cobol\online\cst\WHATIF.cob` | `WI-SIDE-EFFECTS` is forced to `"N"` on entry — the caller cannot ask for side effects. | An output dressed as an input, kept because the screen displays it as reassurance. | Make it a constant in the contract. |
+| `db\procs\cst\01-cst-enquiry.sql` | `usp_OrderMargin` returns revenue and cost but no margin; the division is done in COBOL. | Deliberate: the `UNDEFINED` rules of CST-013 live in exactly one place. | Keep. If the proc ever computes a percentage, two implementations start drifting the same day. |
+| `db\seed\41-cst-menu.sql` | `core.ReportDef` rows name batch programs (`CSTINVAL`, `CSTJOBPR`, `CSTVARRP`, `CSTSETCM`). | Resolved 2026-10-06: all four programs now exist in `cobol\batch\cst` and their command lines match the seeded `ParamSpec` exactly. | Keep the two in step; nothing checks that a `ParamSpec` still matches the program that reads it. |
+
+## Batch reports (added 2026-10-06)
+
+| File | Pattern | Why it is there | Modernisation hint |
+|---|---|---|---|
+| `cobol\batch\cst\*.cob` | Band subtotals are accumulated in WORKING-STORAGE and copied into `BT-*` fields just before the `GENERATE` that breaks the control, instead of using the Report Writer `SUM` clause. | These groups print a second detail line (NRV, status, disposal, quantity). `SUM` accumulates on every `GENERATE` in the report and `UPON <detail>` is not honoured here, so every subtotal came out doubled. | A reporting layer that separates the data shape from the page shape; the subtotal then belongs to the query, not to the print loop. |
+| `cobol\batch\cst\CSTINVAL.cob` | Cursor 3 (FIFO layers) is opened and closed inside the loop on cursor 1, and `SQLIO-COL-CNT` is restored by hand afterwards. | `SQLIO` keeps one column descriptor per call rather than per cursor, which is how the 1996 stock suite was written. | Per-cursor descriptors in `SQLIO`, or one query that returns pool and layer rows together. |
+| `cobol\batch\cst\CSTJOBPR.cob` | Customer, status and overspend selection is done in COBOL after the rows come back, because `cst.usp_JobProfitability` is shared with the screen enquiry and has no such parameters. | Adding parameters to the shared proc for one report's filters would have put report logic in a screen's query. | Optional predicates on the proc, or a thin reporting view over it. |
+| `cobol\batch\cst\CSTVARRP.cob` | The long names of the eleven variance types are an `EVALUATE` in the program, not a lookup table. | The `CK_Var_Type` check constraint already fixes the list, so a table would be a second place to forget. | A reference table generated from the constraint, so the two cannot drift. |
+| `cobol\batch\cst\*.cob` | Report footer sentences are short enough to fit one source line rather than using continuation lines. | Fixed-format continuation of a literal inserted a space at the split point in this dialect, which broke words in the middle. | Free-format source, where the compiler joins literals properly. |
+| `db\procs\cst\01-cst-enquiry.sql` | `usp_ValuationRecon` defaults the control account to `1100` and takes no account group. | The stock control account is a single account in this chart; a company with several would have to pass each one and add the results up. | Reconcile by `core.Account.AccountGroup = 'INVENTORY'` instead of a single code. |
+
+## .NET client (added 2026-10-06)
+
+| File | Pattern | Why it is there | Modernisation hint |
+|---|---|---|---|
+| `dotnet\STERP.Business\Costing\CostingService.vb` | `CostArea` repeats, almost line for line, the window-copy helper the kit module keeps in `KitArea.vb`. | A module owns its own files; sharing the helper would have meant editing another team's class, and a spec string is cheaper to read beside the facade that uses it. | One framework-level `CommAreaTable` helper, with the column spec declared next to the copybook rather than in each facade. |
+| `dotnet\STERP.Desktop\Forms\Costing\*.vb` | The screens have no `.Designer.vb`: every control is a `ListForm` filter or a toolbar button created in `BuildFilters`/`BuildTools`. | The costing screens are worklists with a filter row; a hand-written designer file would have been three hundred lines of `SetBounds` saying the same thing. | A declarative screen definition, as the generic maintenance screens already have in `core.MaintDef`. |
+| `dotnet\STERP.Desktop\Forms\Costing\frmCostSet.vb` | Compare replaces the worklist in the same grid, and F5 brings the list back. | One grid per `ListForm`; a second grid would have meant abandoning the base form. | A master/detail layout, or a separate comparison screen fed by the same service call. |
+| `db\procs\cst\01-cst-enquiry.sql` | `usp_CostEnquiry` defaults `@SiteCode` to the literal `'*'`, which matches a pool recorded against `'*'` and nothing else; callers that want every site pass `NULL`. | The `'*'` convention predates the nullable parameter and some pools really are held at site `'*'`. | One convention for "all": `NULL`, with `'*'` migrated in the data. |

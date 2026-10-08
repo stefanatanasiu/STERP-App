@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project ToolsVersion="15.0" DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="..\STERP.Legacy.props" />
+  <PropertyGroup>
+    <ProjectGuid>{A1C00005-0000-4000-8000-000000000005}</ProjectGuid>
+    <OutputType>WinExe</OutputType>
+    <RootNamespace>STERP.Desktop</RootNamespace>
+    <AssemblyName>STERP</AssemblyName>
+    <StartupObject>STERP.Desktop.Program</StartupObject>
+    <LangVersion>15</LangVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <Reference Include="System" />
+    <Reference Include="System.Configuration" />
+    <Reference Include="System.Core" />
+    <Reference Include="System.Data" />
+    <Reference Include="System.Drawing" />
+    <Reference Include="System.Windows.Forms" />
+    <Reference Include="System.Xml" />
+  </ItemGroup>
+  <ItemGroup>
+    <Import Include="Microsoft.VisualBasic" />
+    <Import Include="System" />
+    <Import Include="System.Collections.Generic" />
+    <Import Include="System.Data" />
+    <Import Include="System.Drawing" />
+    <Import Include="System.Windows.Forms" />
+  </ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\STERP.Common\STERP.Common.csproj">
+      <Project>{A1C00001-0000-4000-8000-000000000001}</Project>
+      <Name>STERP.Common</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\STERP.Data\STERP.Data.csproj">
+      <Project>{A1C00002-0000-4000-8000-000000000002}</Project>
+      <Name>STERP.Data</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\STERP.CobolInterop\STERP.CobolInterop.csproj">
+      <Project>{A1C00003-0000-4000-8000-000000000003}</Project>
+      <Name>STERP.CobolInterop</Name>
+    </ProjectReference>
+    <ProjectReference Include="..\STERP.Business\STERP.Business.vbproj">
+      <Project>{A1C00004-0000-4000-8000-000000000004}</Project>
+      <Name>STERP.Business</Name>
+    </ProjectReference>
+  </ItemGroup>
+  <!-- Wildcards so module teams drop Forms\<Module>\frmXxx.vb(+.Designer.vb) in without
+       touching this file.  Keep the Exclude lists intact: obj\ holds generated .vb. -->
+  <ItemGroup>
+    <Compile Include="Forms\**\*.vb" Exclude="Forms\**\*.Designer.vb">
+      <SubType>Form</SubType>
+    </Compile>
+    <Compile Include="Forms\**\*.Designer.vb">
+      <DependentUpon>$([System.String]::Copy('%(Filename)').Replace('.Designer','')).vb</DependentUpon>
+    </Compile>
+    <Compile Include="*.vb" Exclude="*.Designer.vb" />
+    <Compile Include="*.Designer.vb">
+      <DependentUpon>$([System.String]::Copy('%(Filename)').Replace('.Designer','')).vb</DependentUpon>
+    </Compile>
+    <EmbeddedResource Include="Forms\**\*.resx">
+      <DependentUpon>%(Filename).vb</DependentUpon>
+    </EmbeddedResource>
+  </ItemGroup>
+  <ItemGroup>
+    <None Include="App.config" />
+  </ItemGroup>
+  <Import Project="$(MSBuildToolsPath)\Microsoft.VisualBasic.targets" />
+</Project>

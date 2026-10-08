@@ -1,0 +1,68 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<Invoice xmlns:cac="urn:oasis:names:specification:ubl:schema:xsd:CommonAggregateComponents-2" xmlns:cbc="urn:oasis:names:specification:ubl:schema:xsd:CommonBasicComponents-2">
+  <cbc:CustomizationID>urn:cen.eu:en16931:2017</cbc:CustomizationID>
+  <cbc:ProfileID>urn:fdc:peppol.eu:2017:poacc:billing:01:1.0</cbc:ProfileID>
+  <cbc:ID> inv-2026-5541 </cbc:ID>
+  <cbc:IssueDate>2026-09-18</cbc:IssueDate>
+  <cbc:DueDate>2026-10-18</cbc:DueDate>
+  <cbc:TaxPointDate>2026-09-18</cbc:TaxPointDate>
+  <cbc:InvoiceTypeCode>380</cbc:InvoiceTypeCode>
+  <cbc:DocumentCurrencyCode>GBP</cbc:DocumentCurrencyCode>
+  <cbc:BuyerReference>STC-AP</cbc:BuyerReference>
+  <cac:OrderReference>
+    <cbc:ID>PO-100441</cbc:ID>
+  </cac:OrderReference>
+  <cac:AccountingSupplierParty>
+    <cac:Party>
+      <cbc:EndpointID>9932:GB348217654</cbc:EndpointID>
+      <cac:PartyIdentification>
+        <cbc:ID>S0001</cbc:ID>
+      </cac:PartyIdentification>
+      <cac:PartyName>
+        <cbc:Name>Pennine Fabrications Limited</cbc:Name>
+      </cac:PartyName>
+      <cac:PartyTaxScheme>
+        <cbc:CompanyID>GB348217654</cbc:CompanyID>
+        <cac:TaxScheme>
+          <cbc:ID>VAT</cbc:ID>
+        </cac:TaxScheme>
+      </cac:PartyTaxScheme>
+    </cac:Party>
+  </cac:AccountingSupplierParty>
+  <cac:AccountingCustomerParty>
+    <cac:Party>
+      <cbc:EndpointID>9932:GB110023344</cbc:EndpointID>
+    </cac:Party>
+  </cac:AccountingCustomerParty>
+  <cac:TaxTotal>
+    <cbc:TaxAmount currencyID="GBP">1000.00</cbc:TaxAmount>
+  </cac:TaxTotal>
+  <cac:LegalMonetaryTotal>
+    <cbc:LineExtensionAmount currencyID="GBP">5000.00</cbc:LineExtensionAmount>
+    <cbc:TaxExclusiveAmount currencyID="GBP">5000.00</cbc:TaxExclusiveAmount>
+    <cbc:TaxInclusiveAmount currencyID="GBP">6000.00</cbc:TaxInclusiveAmount>
+    <cbc:PayableAmount currencyID="GBP">6000.00</cbc:PayableAmount>
+  </cac:LegalMonetaryTotal>
+  <cac:InvoiceLine>
+    <cbc:ID>1</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">500</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="GBP">4000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Bracket assembly, mild steel</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:Percent>20</cbc:Percent>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+  </cac:InvoiceLine>
+  <cac:InvoiceLine>
+    <cbc:ID>2</cbc:ID>
+    <cbc:InvoicedQuantity unitCode="EA">200</cbc:InvoicedQuantity>
+    <cbc:LineExtensionAmount currencyID="GBP">1000.00</cbc:LineExtensionAmount>
+    <cac:Item>
+      <cbc:Name>Mounting plate, zinc plated</cbc:Name>
+      <cac:ClassifiedTaxCategory>
+        <cbc:Percent>20</cbc:Percent>
+      </cac:ClassifiedTaxCategory>
+    </cac:Item>
+  </cac:InvoiceLine>
+</Invoice>
