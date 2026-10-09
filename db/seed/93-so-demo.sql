@@ -5,6 +5,9 @@
     running the sales programs (DESPATCH, SOINVRUN) so that the stock movements, the journals and
     the sales ledger agree.  Order SOS900008 and SOC900004 are left picked and billing-eligible
     exactly so a demonstration can confirm a despatch and then run the invoice run against them.
+    Their items are lot / serial controlled, so the pick list a despatch issues from (naming the
+    bin and the lot or serial) is not seeded here: SODEMO (2700-STAGE-PICKED) reserves and picks
+    them through SORESV and PICKGEN (GUI-005).
     Document numbers use the 900000 band so they can never collide with a number the live series
     issues.  Re-runnable: every insert is guarded, and the header totals are recomputed from the
     lines each time.  REQ: SO-001, SO-002, SO-003, SO-007, SO-008, SO-011, SO-015, SO-021,

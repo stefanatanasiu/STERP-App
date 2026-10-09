@@ -35,6 +35,10 @@
       *>----------------------------------------------------------------
       *> CHANGE LOG
       *> 2026-10-06 STERP ORIGINAL - DEMONSTRATION DATA GENERATOR
+      *> 2026-10-08 STERP GUI-005 THE SEEDED LOT / SERIAL CONTROLLED
+      *>                 PICKED ORDERS ARE RESERVED AND PICKED THROUGH
+      *>                 SORESV AND PICKGEN SO THEY CAN BE DESPATCHED
+      *>                 ON THE SCREEN (2700-STAGE-PICKED)
       *>================================================================
       *> REQ: SO-001, SO-002, SO-007, SO-008, SO-009, SO-012, SO-013,
       *> REQ: SO-014, SO-017, SO-018, SO-024
@@ -143,6 +147,14 @@
            05  WS-RETURN-REF           PIC X(30) VALUE SPACES.
            05  WS-SCENARIO             PIC X(22) VALUE SPACES.
            05  WS-FOUND                PIC X VALUE "N".
+           05  WS-SAVE-SITE            PIC X(10) VALUE SPACES.
+           05  WS-SAVE-WHS             PIC X(20) VALUE SPACES.
+      *>   GUI-005 - Y while 2700 stages the traceable seeded orders:
+      *>   the pick confirmation then names the bin and the lot or
+      *>   serial actually taken, so DESPATCH can issue from it
+           05  WS-NAME-LOT             PIC X VALUE "N".
+           05  WS-SRC-QTY              PIC S9(13)V9(6) VALUE 0.
+           05  WS-SRC-QTY-ED           PIC Z(9)9.99.
            05  WS-COUNT                PIC S9(9) VALUE 0.
            05  WS-SEQ                  PIC S9(4) VALUE 0.
       *>   one sales order line, read back before any service CALL.
@@ -480,7 +492,10 @@
        1010-START.
            MOVE 1 TO WS-CO-CNT
            MOVE WS-CO TO CO-CODE(1)
-           MOVE WS-CO TO WS-CUR-CO
+      *>   GUI-005 - the search walks every company from the start of
+      *>   the alphabet; starting it at WS-CO skipped any company that
+      *>   sorts before it, so CO=STC never reached CAL
+           MOVE SPACES TO WS-CUR-CO
            PERFORM UNTIL WS-CO-CNT >= 6
                MOVE SPACES TO SQLIO-STMT
                STRING "SELECT TOP 1 c.CompanyCode FROM core.Company "
@@ -527,6 +542,7 @@
            MOVE SPACES TO WS-ORD-CORR
            PERFORM 1110-LOAD-SITE THRU 1110-EXIT
            PERFORM 2000-PICKED-ORDERS THRU 2000-EXIT
+           PERFORM 2700-STAGE-PICKED THRU 2700-EXIT
            PERFORM 3000-QUOTE-TO-ORDER THRU 3000-EXIT
            PERFORM 7000-INVOICE-RUN THRU 7000-EXIT
            PERFORM 7500-CUSTOMER-RETURN THRU 7500-EXIT.
@@ -965,6 +981,157 @@
            MOVE DS-DESPATCH-REF TO D-REF
            MOVE DS-COGS-GBP TO D-AMOUNT.
        2600-EXIT.
+           EXIT.
+      *>----------------------------------------------------------------
+      *> SCENARIO 1B - GUI-005.  The seeded picked orders that scenario
+      *> 1 leaves alone (their items are lot or serial controlled) are
+      *> the ones the demonstration despatches on the screen, and a
+      *> despatch of a traceable item needs a pick list that names the
+      *> lot or serial.  The seed cannot invent one, so it is made the
+      *> honest way: SORESV reserves the stock (and so chooses the lot
+      *> or serial), PICKGEN generates and confirms the pick.  Nothing
+      *> is despatched here - picking moves no stock and posts nothing.
+      *>----------------------------------------------------------------
+       2700-STAGE-PICKED SECTION.
+       2700-START.
+           MOVE "Ready to despatch" TO WS-SCENARIO
+           MOVE WS-SITE TO WS-SAVE-SITE
+           MOVE WS-WHS TO WS-SAVE-WHS
+           MOVE SPACES TO WS-LAST-ORDER
+           PERFORM 4 TIMES
+               PERFORM 2710-NEXT-UNPICKED THRU 2710-EXIT
+               IF WS-FOUND = "Y"
+                   IF WS-COMMIT
+                       MOVE SPACES TO WS-ORD-CORR
+                       STRING "SODEMO-" FUNCTION TRIM(WS-CUR-CO) "-P-"
+                              FUNCTION TRIM(WS-ORDER)
+                           DELIMITED BY SIZE INTO WS-ORD-CORR
+                       PERFORM 5000-RESERVE THRU 5000-EXIT
+                       MOVE "Y" TO WS-NAME-LOT
+                       PERFORM 6000-PICK THRU 6000-EXIT
+                       MOVE "N" TO WS-NAME-LOT
+                   ELSE
+                       MOVE "pick list" TO D-STEP
+                       MOVE WS-ORDER TO D-REF
+                       MOVE 0 TO D-AMOUNT
+                       MOVE "PLANNED" TO D-STATUS
+                       MOVE "preview only" TO D-OUTCOME
+                       PERFORM 8000-LOG-LINE THRU 8000-EXIT
+                   END-IF
+               END-IF
+           END-PERFORM
+           MOVE WS-SAVE-SITE TO WS-SITE
+           MOVE WS-SAVE-WHS TO WS-WHS.
+       2700-EXIT.
+           EXIT.
+      *>----------------------------------------------------------------
+      *> A seeded, released, picked order with no despatch and no pick
+      *> list yet, with the main warehouse of its own site (the run's
+      *> SITE= argument may name another site).
+      *>----------------------------------------------------------------
+       2710-NEXT-UNPICKED SECTION.
+       2710-START.
+           MOVE "N" TO WS-FOUND
+           MOVE SPACES TO SQLIO-STMT
+           STRING "SELECT TOP 1 o.OrderNumber, o.CustomerCode, "
+                  "o.SiteCode, ISNULL((SELECT TOP 1 w.WarehouseCode "
+                  "FROM inv.Warehouse w WHERE w.CompanyCode = "
+                  "o.CompanyCode AND w.SiteCode = o.SiteCode ORDER "
+                  "BY CASE WHEN w.WarehouseCode = 'MAIN' THEN 0 "
+                  "ELSE 1 END, w.WarehouseCode),'MAIN') "
+                  "FROM so.SalesOrder o WHERE o.CompanyCode = ? "
+                  "AND o.CreatedBy = 'SEED' AND o.CommercialStatus "
+                  "IN ('ACCEPTED','AMENDED') AND o.ReleaseStatus = "
+                  "'RELEASED' AND o.FulfilmentStatus = 'PICKED' "
+                  "AND NOT EXISTS (SELECT 1 FROM so.Despatch d WHERE "
+                  "d.CompanyCode = o.CompanyCode AND d.OrderNumber = "
+                  "o.OrderNumber) AND NOT EXISTS (SELECT 1 FROM "
+                  "so.PickList p WHERE p.CompanyCode = o.CompanyCode "
+                  "AND p.OrderNumber = o.OrderNumber AND p.Status <> "
+                  "'CANCELLED') AND o.OrderNumber > ? "
+                  "ORDER BY o.OrderNumber"
+               DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE 2 TO SQLIO-PARM-CNT
+           MOVE WS-CUR-CO TO SQLIO-PARM-VAL(1)
+           MOVE WS-LAST-ORDER TO SQLIO-PARM-VAL(2)
+           MOVE "N" TO SQLIO-PARM-NULL(1)
+           MOVE "N" TO SQLIO-PARM-NULL(2)
+           MOVE 4 TO SQLIO-COL-CNT
+           PERFORM 8900-SET-WIDTHS THRU 8900-EXIT
+           MOVE 8 TO SQLIO-CURSOR
+           MOVE "SNGL" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA SD-ROW
+           IF SQLIO-OK AND SD-COL(1) NOT = SPACES
+               MOVE "Y" TO WS-FOUND
+               MOVE SD-COL(1) TO WS-ORDER
+               MOVE SD-COL(1) TO WS-LAST-ORDER
+               MOVE SD-COL(2) TO WS-CUSTOMER
+               MOVE SD-COL(3) TO WS-SITE
+               MOVE SD-COL(4) TO WS-WHS
+           END-IF.
+       2710-EXIT.
+           EXIT.
+      *>----------------------------------------------------------------
+      *> The bin and the lot or serial the picker actually takes for
+      *> pick line WS-LX: an owned, accepted balance at the order's
+      *> site and warehouse, preferring one that covers the whole
+      *> quantity.  A despatch line issues from one lot or serial, so
+      *> when no single balance covers it the rest is recorded as a
+      *> reasoned short pick and stays on back order (CR1051).
+      *>----------------------------------------------------------------
+       2730-PICK-SOURCE SECTION.
+       2730-START.
+           MOVE SPACES TO SQLIO-STMT
+           STRING "SELECT TOP 1 b.LocationCode, ISNULL(b.LotCode,''), "
+                  "ISNULL(b.SerialNo,''), CONVERT(varchar(30), "
+                  "b.QtyOnHand) FROM inv.StockBalance b JOIN "
+                  "inv.Location v ON v.CompanyCode = b.CompanyCode "
+                  "AND v.SiteCode = b.SiteCode AND v.WarehouseCode = "
+                  "b.WarehouseCode AND v.LocationCode = b.LocationCode "
+                  "WHERE b.CompanyCode = ? AND b.SiteCode = ? AND "
+                  "b.WarehouseCode = ? AND b.ItemCode = ? AND "
+                  "b.QualityStatus = 'ACCEPTED' AND b.OwnerType = "
+                  "'OWNED' AND v.IsAvailable = 1 AND v.IsOwnedStock = "
+                  "1 AND b.QtyOnHand > 0 ORDER BY CASE WHEN "
+                  "b.QtyOnHand >= CONVERT(decimal(19,6), ?) THEN 0 "
+                  "ELSE 1 END, b.QtyOnHand DESC, b.LotCode, b.SerialNo"
+               DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE 5 TO SQLIO-PARM-CNT
+           MOVE WS-CUR-CO TO SQLIO-PARM-VAL(1)
+           MOVE WS-SITE TO SQLIO-PARM-VAL(2)
+           MOVE WS-WHS TO SQLIO-PARM-VAL(3)
+           MOVE LN-ITEM(WS-LX) TO SQLIO-PARM-VAL(4)
+           MOVE LN-QTY(WS-LX) TO SQLIO-NUM-EDIT
+           MOVE FUNCTION TRIM(SQLIO-NUM-EDIT) TO SQLIO-PARM-VAL(5)
+           PERFORM VARYING WS-IX FROM 1 BY 1 UNTIL WS-IX > 5
+               MOVE "N" TO SQLIO-PARM-NULL(WS-IX)
+           END-PERFORM
+           MOVE 4 TO SQLIO-COL-CNT
+           PERFORM 8900-SET-WIDTHS THRU 8900-EXIT
+           MOVE 8 TO SQLIO-CURSOR
+           MOVE "SNGL" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA SD-ROW
+           IF NOT SQLIO-OK OR SD-COL(1) = SPACES
+               GO TO 2730-EXIT
+           END-IF
+           MOVE SD-COL(1) TO PK-LOCATION
+           MOVE SD-COL(2) TO PK-LOT-CODE
+           MOVE SD-COL(3) TO PK-SERIAL-NO
+           COMPUTE WS-SRC-QTY = FUNCTION NUMVAL(SD-COL(4))
+           IF WS-SRC-QTY < LN-QTY(WS-LX)
+               MOVE WS-SRC-QTY TO PK-PICKED-QTY
+               COMPUTE PK-SHORT-QTY = LN-QTY(WS-LX) - WS-SRC-QTY
+               MOVE WS-SRC-QTY TO WS-SRC-QTY-ED
+               MOVE SPACES TO PK-SHORT-REASON
+               STRING "One despatch line issues from one lot or "
+                      "serial; "
+                      FUNCTION TRIM(SD-COL(2)) FUNCTION TRIM(SD-COL(3))
+                      " in " FUNCTION TRIM(SD-COL(1)) " holds "
+                      FUNCTION TRIM(WS-SRC-QTY-ED)
+                      " - the balance stays on back order"
+                   DELIMITED BY SIZE INTO PK-SHORT-REASON
+           END-IF.
+       2730-EXIT.
            EXIT.
       *>----------------------------------------------------------------
       *> SCENARIO 2 - the whole order to cash chain, built from
@@ -1604,6 +1771,9 @@
                MOVE LN-QTY(WS-LX) TO PK-PICKED-QTY
                MOVE 0 TO PK-SHORT-QTY
                MOVE LN-LOCN(WS-LX) TO PK-LOCATION
+               IF WS-NAME-LOT = "Y"
+                   PERFORM 2730-PICK-SOURCE THRU 2730-EXIT
+               END-IF
                CALL "PICKGEN" USING WS-PCK
                MOVE CA-RETURN-CODE OF WS-PCK TO WS-CALL-RC
                MOVE CA-REASON-CODE OF WS-PCK TO WS-CALL-REASON

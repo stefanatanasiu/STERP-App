@@ -22,14 +22,17 @@ WHEN MATCHED AND EXISTS (SELECT s.Module, s.Name, s.IsSensitive, s.IsApproval EX
 WHEN NOT MATCHED THEN INSERT (PermissionCode, Module, Name, IsSensitive, IsApproval, CreatedBy)
      VALUES (s.PermissionCode, s.Module, s.Name, s.IsSensitive, s.IsApproval, 'SEED');
 GO
-/*  Who holds them.  Billing is a sales management act, so only SALESMGR runs the invoice run;
-    printing an acknowledgement or a despatch note is routine for the sales desk and the
-    warehouse alike.  The warehouse also gains the read-only sales enquiry so it can see the
-    backlog it has to pick (SO-022).  Printing is evidence, never a release (SO-011).
+/*  Who holds them.  The invoice run is opened by the sales manager and by the AR clerk; only
+    the AR clerk also holds AR.INVOICE.POST, which ARINVPST demands before a COMMIT raises an
+    invoice, so a sales manager can preview the billing queue but not bill it (GUI-006 - the
+    order-to-cash acceptance test bills as ARCLERK).  Printing an acknowledgement or a despatch
+    note is routine for the sales desk and the warehouse alike.  The warehouse also gains the
+    read-only sales enquiry so it can see the backlog it has to pick (SO-022).  Printing is
+    evidence, never a release (SO-011).
     REQ: COM-002, SO-011, SO-014, SO-022 */
 INSERT core.RolePermission (RoleCode, PermissionCode, CreatedBy)
 SELECT v.RoleCode, v.PermissionCode, 'SEED'
-  FROM (VALUES ('SALESMGR','SO.INVOICE.RUN'),
+  FROM (VALUES ('SALESMGR','SO.INVOICE.RUN'), ('ARCLERK','SO.INVOICE.RUN'),
                ('SALESREP','SO.DOCUMENT.PRINT'), ('SALESMGR','SO.DOCUMENT.PRINT'), ('WHSE','SO.DOCUMENT.PRINT'),
                ('WHSE','SO.ENQUIRY.VIEW')) AS v (RoleCode, PermissionCode)
  WHERE EXISTS (SELECT 1 FROM core.Role r WHERE r.RoleCode = v.RoleCode)

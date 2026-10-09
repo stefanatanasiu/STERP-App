@@ -10,6 +10,8 @@ Partial Public Class frmLogin
     Inherits Form
 
     Private ReadOnly _login As New LoginService()
+    ''' <summary>Company/site in use when the dialog opened; kept selected while the new user may use it.</summary>
+    Private _preferred As String = ""
 
     Public Sub New()
         InitializeComponent()
@@ -18,6 +20,14 @@ Partial Public Class frmLogin
 
     Private Sub frmLogin_Load(ByVal sender As Object, ByVal e As EventArgs) Handles MyBase.Load
         lblLoginValue.Text = _login.WindowsLogin
+        ' re-opened from File > Select Company / Site or Continue as User: keep who the operator
+        ' is now (a SYSADM demonstrating as a clerk stays that clerk) and the date already chosen
+        If SterpSession.Current.IsSignedOn Then
+            dtpDate.Value = SterpSession.Current.BusinessDate
+            _preferred = SterpSession.Current.CompanyCode & "/" & SterpSession.Current.SiteCode
+            ShowContext()
+            Return
+        End If
         dtpDate.Value = Date.Today
         Me.Cursor = Cursors.WaitCursor
         Dim msg As String = _login.SignOn()
@@ -46,6 +56,13 @@ Partial Public Class frmLogin
             lstAccess.Items.Add(cs)
         Next
         If lstAccess.Items.Count > 0 Then lstAccess.SelectedIndex = 0
+        For i As Integer = 0 To lstAccess.Items.Count - 1
+            Dim cs As CompanySite = TryCast(lstAccess.Items(i), CompanySite)
+            If cs IsNot Nothing AndAlso cs.CompanyCode & "/" & cs.SiteCode = _preferred Then
+                lstAccess.SelectedIndex = i
+                Exit For
+            End If
+        Next
         lblMessage.Text = If(lstAccess.Items.Count = 0,
             "*** No company or site has been granted to this user.",
             lstAccess.Items.Count & " company/site combination(s) available.")

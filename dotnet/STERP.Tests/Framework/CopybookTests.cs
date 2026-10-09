@@ -76,5 +76,24 @@ namespace STERP.Tests
             St.Eq(0m, ca.GetDecimal("PG-ECHO-DOUBLE"), "sign separate field zero");
             St.True(ca.HexDump().Length > 100, "hex dump produced");
         }
+
+        [StTest("commarea: INITIALIZE reaches every occurrence of an OCCURS group", Reqs = "COM-011")]
+        public static void InitialisedOccurrences()
+        {
+            CommArea ca = CommArea.For("DESPATCHCA");
+            CobolField g = ca.Field("DS-LINES");
+            CobolField whse = ca.Field("DS-L-WHSE");
+            for (int i = 0; i < g.Occurs; i++)
+            {
+                int at = whse.Offset + i * g.ElementLength;
+                for (int k = 0; k < whse.ElementLength; k++)
+                    if (ca.Buffer[at + k] != (byte)' ')
+                    {
+                        St.True(false, "DS-L-WHSE(" + (i + 1) + ") is not spaces (DSP0004 regression)");
+                        return;
+                    }
+                St.Eq(0m, ca.GetDecimal("DS-L-QTY(" + (i + 1) + ")"), "DS-L-QTY(" + (i + 1) + ") zero");
+            }
+        }
     }
 }

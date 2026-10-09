@@ -18,6 +18,9 @@ Public Class frmDespatchConfirm
     Private ReadOnly _svc As New SalesOrderService()
     Private _lines As DataTable
     Private _confirmed As Boolean
+    ''' <summary>The pick list and order on the screen; F10 acts on these, not on what is keyed since.</summary>
+    Private _loadedPick As String = ""
+    Private _loadedOrder As String = ""
 
     Public Sub New()
         InitializeComponent()
@@ -30,7 +33,7 @@ Public Class frmDespatchConfirm
         txtPacks.Text = "1"
         txtWeight.Text = "0"
         If FormArgument <> "" Then txtPickRef.Text = FormArgument
-        SetStatus("Key the pick list reference and press F5, then F10 to confirm the despatch.")
+        SetStatus("Key the pick list (F2 for the list) or the order number and press F5, then F10 to confirm the despatch.")
     End Sub
 
     Protected Overrides Sub OnRefreshKey()
@@ -48,23 +51,37 @@ Public Class frmDespatchConfirm
     End Function
 
     ''' <summary>Reads the pick list and offers the picked quantity as the despatch quantity -
-    ''' the operator may reduce it, and the engine decides whether the result is allowed.</summary>
+    ''' the operator may reduce it, and the engine decides whether the result is allowed.  With no
+    ''' pick list keyed, the order number is resolved to its pick list.</summary>
     Private Sub LoadPick()
         Dim pick As String = txtPickRef.Text.Trim().ToUpperInvariant()
+        Dim keyedOrder As String = txtOrder.Text.Trim().ToUpperInvariant()
+        ' a different order keyed over a loaded pick means "find that order's pick"
+        If pick <> "" AndAlso pick = _loadedPick AndAlso keyedOrder <> "" AndAlso keyedOrder <> _loadedOrder Then pick = ""
         If pick = "" Then
-            SetStatus("Key a pick list reference first.", "!  WARNING")
-            Return
+            Dim order As String = keyedOrder
+            If order = "" Then
+                SetStatus("Key a pick list reference or an order number, or press F2 for the pick lists waiting to go out.",
+                          "!  WARNING")
+                Return
+            End If
+            pick = PickForOrder(order)
+            If pick = "" Then Return
         End If
         txtPickRef.Text = pick
+        ClearPick(False)
         Guard(Sub()
                   _lines = _svc.PickLines(pick)
                   If _lines.Rows.Count = 0 Then
+                      _lines = Nothing
                       SetStatus("Pick list " & pick & " has no lines in " & SterpSession.Current.CompanyCode &
                                 ".", "*** ERROR")
                       Return
                   End If
                   txtOrder.Text = Fmt.Str(_lines.Rows(0)("OrderNumber"))
                   lblCustomer.Text = Fmt.Str(_lines.Rows(0)("CustomerCode"))
+                  _loadedPick = pick
+                  _loadedOrder = txtOrder.Text.Trim().ToUpperInvariant()
                   _lines.Columns.Add(DespatchColumn, GetType(Decimal)).DefaultValue = 0D
                   For Each r As DataRow In _lines.Rows
                       r(DespatchColumn) = Fmt.Dec(r("PickedQty"))
@@ -78,8 +95,36 @@ Public Class frmDespatchConfirm
               End Sub)
     End Sub
 
+    ''' <summary>The pick list of an order: the only one is taken, several are offered, none is
+    ''' explained - an order must be picked before it can be despatched.</summary>
+    Private Function PickForOrder(ByVal order As String) As String
+        Dim picks As DataTable = Nothing
+        If Not Guard(Sub() picks = _svc.PicksForOrder(order)) Then Return ""
+        If picks.Rows.Count = 1 Then Return Fmt.Str(picks.Rows(0)("PickListRef"))
+        If picks.Rows.Count > 1 Then
+            Return frmLookup.Pick(Me, SalesOrderService.PickListPickSql, order, "Pick lists for order " & order)
+        End If
+        ClearPick(True)
+        SetStatus("Order " & order & " has no pick list waiting to go out at " & SterpSession.Current.SiteCode &
+                  " - it must be picked before it can be despatched.", "*** ERROR")
+        Return ""
+    End Function
+
+    ''' <summary>Removes the previous pick so nothing on view or actionable belongs to another one.</summary>
+    Private Sub ClearPick(ByVal keepOrder As Boolean)
+        _lines = Nothing
+        _confirmed = False
+        _loadedPick = ""
+        _loadedOrder = ""
+        If Not keepOrder Then txtOrder.Text = ""
+        lblCustomer.Text = "-"
+        GridHelper.Bind(grdLines, Nothing)
+        Outcome("", 0D, 0D, "NOT CONFIRMED - nothing has been despatched yet.")
+    End Sub
+
     Private Sub DecorateLines()
         GridHelper.Decorate(grdLines, "LineNum", "Line", "INT", 44)
+        GridHelper.Decorate(grdLines, "OrderLineNum", "Order line", "INT", 70)
         GridHelper.Decorate(grdLines, "ItemCode", "Item", "CODE", 140)
         GridHelper.Decorate(grdLines, "RequiredQty", "Required qty", "QTY", 100)
         GridHelper.Decorate(grdLines, "PickedQty", "Picked qty", "QTY", 100)
@@ -117,6 +162,11 @@ Public Class frmDespatchConfirm
             SetStatus("Load a pick list first (F5).", "!  WARNING")
             Return
         End If
+        If txtPickRef.Text.Trim().ToUpperInvariant() <> _loadedPick OrElse
+           txtOrder.Text.Trim().ToUpperInvariant() <> _loadedOrder Then
+            SetStatus("The pick list or order has been changed since it was loaded - press F5 to load it first.", "!  WARNING")
+            Return
+        End If
         Dim total As Decimal = 0D
         For Each r As DataRow In _lines.Rows
             total += Fmt.Dec(r(DespatchColumn))
@@ -148,7 +198,7 @@ Public Class frmDespatchConfirm
     End Sub
 
     Private Function BuildArea() As CommArea
-        Dim ca As CommArea = _svc.NewDespatch(txtOrder.Text.Trim(), txtPickRef.Text.Trim(), lblCustomer.Text.Trim(),
+        Dim ca As CommArea = _svc.NewDespatch(_loadedOrder, _loadedPick, lblCustomer.Text.Trim(),
                                               DespatchDate(), txtCarrier.Text.Trim(), txtCarrierRef.Text.Trim(),
                                               Fmt.Int(txtPacks.Text), Fmt.Dec(txtWeight.Text),
                                               txtIncoterms.Text.Trim(), txtIncoPlace.Text.Trim(),
@@ -160,15 +210,20 @@ Public Class frmDespatchConfirm
             If qty <= 0D Then Continue For
             n += 1
             If n > SalesOrderService.MaxLines Then Exit For
-            _svc.AddDespatchLine(ca, n, Fmt.Int(r("LineNum")), Fmt.Str(r("ItemCode")), Fmt.Str(r("ItemCode")),
-                                 Fmt.Dec(r("PickedQty")), qty, "", Fmt.Str(r("LotCode")), Fmt.Str(r("SerialNo")))
+            ' The order line, schedule and bin of the pick - the pick line number is not the order line.
+            _svc.AddDespatchLine(ca, n, Fmt.Int(r("OrderLineNum")), Fmt.Str(r("ItemCode")), Fmt.Str(r("ItemCode")),
+                                 Fmt.Dec(r("PickedQty")), qty, "", Fmt.Str(r("LotCode")), Fmt.Str(r("SerialNo")),
+                                 Fmt.Int(r("ScheduleNo")), Fmt.Str(r("WarehouseCode")), Fmt.Str(r("LocationCode")))
         Next
         Return ca
     End Function
 
+    ''' <summary>F2 - the pick lists at this site with picked stock still to go out (GUI-004).</summary>
     Protected Overrides Sub OnLookup()
-        Dim code As String = frmLookup.Pick(Me, SalesOrderService.OrderPickSql, "", "Sales order")
-        If code <> "" Then txtOrder.Text = code
+        Dim code As String = frmLookup.Pick(Me, SalesOrderService.PickListPickSql, "", "Pick lists waiting to be despatched")
+        If code = "" Then Return
+        txtPickRef.Text = code
+        LoadPick()
     End Sub
 
     Private Sub LoadClicked(ByVal sender As Object, ByVal e As EventArgs) Handles tsbLoad.Click

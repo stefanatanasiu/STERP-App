@@ -16,6 +16,8 @@ Public Class frmSalesOrderEntry
 
     Private ReadOnly _svc As New SalesOrderService()
     Private _lines As DataTable
+    ''' <summary>The order whose data is on the screen; "" when nothing is loaded.</summary>
+    Private _loaded As String = ""
 
     Public Sub New()
         InitializeComponent()
@@ -55,6 +57,7 @@ Public Class frmSalesOrderEntry
             Return
         End If
         txtOrder.Text = order
+        ClearOrder()
         Guard(Sub()
                   Dim h As DataRow = _svc.Header(order)
                   If h Is Nothing Then
@@ -66,9 +69,40 @@ Public Class frmSalesOrderEntry
                   _lines = _svc.Lines(order)
                   GridHelper.Bind(grdLines, _lines)
                   DecorateLines()
+                  _loaded = order
                   Totals()
               End Sub)
     End Sub
+
+    ''' <summary>
+    ''' Removes everything that belonged to the previous order - header, state, lines, the
+    ''' price explanation and the availability pane - so nothing on view or actionable can be
+    ''' mistaken for the order now being loaded (or for an order that is not on file).
+    ''' </summary>
+    Private Sub ClearOrder()
+        _loaded = ""
+        _lines = Nothing
+        For Each t As TextBox In New TextBox() {txtCustomer, txtCustomerRef, txtSalesperson, txtTerms,
+                                               txtIncoterms, txtIncoPlace, txtDeliveryRef}
+            t.Text = ""
+        Next
+        txtOrderDate.Text = Fmt.Date(SterpSession.Current.BusinessDate)
+        txtCurrency.Text = SterpSession.Current.BaseCurrency
+        For Each l As Label In New Label() {lblOrderType, lblCustomerName, lblRelease, lblFulfil, lblBilling,
+                                           lblDocNet, lblHold}
+            l.Text = "-"
+        Next
+        GridHelper.Bind(grdLines, Nothing)
+        GridHelper.Bind(grdWhy, Nothing)
+        txtAvail.Text = "Press F2 on a line for free stock, reservations and expected receipts."
+    End Sub
+
+    ''' <summary>True when the order keyed is the one on the screen; otherwise asks for F5.</summary>
+    Private Function OrderLoaded() As Boolean
+        If _loaded <> "" AndAlso txtOrder.Text.Trim().ToUpperInvariant() = _loaded Then Return True
+        SetStatus("Load the order first - key the order number and press F5.", "!  WARNING")
+        Return False
+    End Function
 
     Private Sub ShowHeader(ByVal h As DataRow)
         txtCustomer.Text = Fmt.Str(ServiceBase.Col(h, "CustomerCode", ""))
@@ -142,6 +176,7 @@ Public Class frmSalesOrderEntry
     ' --------------------------------------------- price explanation, VAT and margin (SO-004/5/6)
 
     Private Sub ExplainClicked(ByVal sender As Object, ByVal e As EventArgs) Handles tsbExplain.Click
+        If Not OrderLoaded() Then Return
         Dim r As DataRow = GridHelper.SelectedRow(grdLines)
         If r Is Nothing Then
             SetStatus("Select an order line first - the explanation is for one line.", "!  WARNING")
@@ -221,6 +256,7 @@ Public Class frmSalesOrderEntry
     ''' <summary>SO-010: free stock, reservations and expected receipts are separate labelled
     ''' lines.  An expected receipt is a supplier promise and is never an allocation.</summary>
     Private Sub ShowAvailability()
+        If Not OrderLoaded() Then Return
         Dim r As DataRow = GridHelper.SelectedRow(grdLines)
         If r Is Nothing Then
             SetStatus("Select an order line, then press F2 for its availability.", "!  WARNING")
@@ -260,6 +296,7 @@ Public Class frmSalesOrderEntry
     End Sub
 
     Private Sub ReserveClicked(ByVal sender As Object, ByVal e As EventArgs) Handles tsbReserve.Click
+        If Not OrderLoaded() Then Return
         Dim r As DataRow = GridHelper.SelectedRow(grdLines)
         If r Is Nothing Then
             SetStatus("Select the order line to reserve.", "!  WARNING")
@@ -279,10 +316,7 @@ Public Class frmSalesOrderEntry
     ' ------------------------------------------------- F10 accept and release (SO-002, SO-003, SO-011)
 
     Protected Overrides Sub OnConfirm()
-        If txtOrder.Text.Trim() = "" Then
-            SetStatus("Key an order number first.", "!  WARNING")
-            Return
-        End If
+        If Not OrderLoaded() Then Return
         Guard(Sub()
                   Dim res As CobolResult = Acceptance("VALIDATE")
                   Dim findings As String = BlockerText()

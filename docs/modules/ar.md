@@ -203,9 +203,13 @@ bank ──► RCPTALOC RECEIPT ──► RCPTALOC CONFIRM ──► RCPTALOC AL
   and `RA-SOURCE-AVAIL` - so the very next `ALLOCATE` settles from the money just banked
   (CR2611; a half-stated source used to leave the area naming one document by id and another by
   number, and the allocation was refused with `RCP0020`).
-* **Money is named before it is applied.** `PREVIEW`, `ALLOCATE` and `UNALLOC` need a source: a call
+* **Money is named before it is applied.** `ALLOCATE` and `UNALLOC` need a source: a call
   that states neither `RA-SOURCE-ITEM-ID` nor `RA-SOURCE-DOC` is refused with `RCP0023` rather than
-  adopting the first open item of the company - a stranger's credit (CR2612).
+  adopting the first open item of the company - a stranger's credit (CR2612). `PREVIEW` with no
+  named source values the receipt still being keyed - `RA-GROSS` in `RA-CURRENCY` for `RA-CUSTOMER`
+  - as its source, so *Receipt Entry* can show the residual before anything is recorded; it reads
+  and writes nothing for it (CR2616). With no amount or customer either, `PREVIEW` is still refused
+  with `RCP0023`.
 * **Unconfirmed evidence is not funds.** A receipt stays unusable until `CONFIRM`; allocating from an
   unconfirmed source is refused (`RCP0021`).
 * `PREVIEW` shows the residual effect with no business effect at all.

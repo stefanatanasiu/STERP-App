@@ -28,6 +28,8 @@
       *>                 THE NEXT ALLOCATE FINDS IT
       *> 2026-10-07 STERP CR2612 AN ALLOCATION MUST NAME ITS SOURCE;
       *>                 IT NO LONGER ADOPTS THE FIRST OPEN ITEM HELD
+      *> 2026-10-08 STERP CR2616 PREVIEW OF A RECEIPT STILL BEING KEYED
+      *>                 VALUES THE KEYED MONEY AS ITS SOURCE (GUI-007)
       *>================================================================
       *> REQ: AR-009, AR-010, AR-011, AR-012, AR-019
        IDENTIFICATION DIVISION.
@@ -895,6 +897,15 @@
       *>   and document written back into the caller's area.  Money is
       *>   always named before it is applied.
            IF RA-SOURCE-ITEM-ID = 0 AND RA-SOURCE-DOC = SPACES
+      *>       CR2616 - a receipt still being keyed has no open item
+      *>       yet.  PREVIEW alone may value the keyed money for the
+      *>       keyed customer as its source; nothing is read for it
+      *>       and nothing is written.  ALLOCATE still needs a name.
+               IF WS-PREVIEW = "Y" AND RA-GROSS > 0
+                  AND RA-CUSTOMER NOT = SPACES
+                   PERFORM 2060-NEW-RECEIPT-SOURCE
+                   GO TO 2050-CHECK
+               END-IF
                MOVE 16 TO AR-RC
                MOVE "RCP0023" TO AR-REASON
                MOVE SPACES TO AR-MSG
@@ -963,7 +974,8 @@
            MOVE WS-S-CURRENCY TO RA-CURRENCY
            COMPUTE WS-SRC-RATE = FUNCTION NUMVAL(WS-S-RATE)
            COMPUTE RA-SOURCE-AVAIL = FUNCTION NUMVAL(WS-S-RESIDUAL)
-           MOVE WS-S-TYPE TO RA-SOURCE-TYPE
+           MOVE WS-S-TYPE TO RA-SOURCE-TYPE.
+       2050-CHECK.
            IF WS-S-CONFIRM NOT = "CONFIRMED"
                MOVE 8 TO AR-RC
                MOVE "RCP0021" TO AR-REASON
@@ -982,6 +994,26 @@
                    DELIMITED BY SIZE INTO AR-MSG
            END-IF.
        2050-EXIT.
+           EXIT.
+
+      *>   CR2616 - the money on the screen, not yet recorded, as the
+      *>   source of a PREVIEW.  Same customer, currency and rate rules
+      *>   as RECEIPT would apply when it is recorded.
+       2060-NEW-RECEIPT-SOURCE SECTION.
+       2060-START.
+           INITIALIZE WS-SRC
+           MOVE RA-CUSTOMER TO WS-S-CUSTOMER
+           MOVE RA-CURRENCY TO WS-S-CURRENCY
+           MOVE RA-CONFIRM-STATE TO WS-S-CONFIRM
+           IF RA-CURRENCY = "GBP"
+               MOVE 1 TO WS-SRC-RATE
+           ELSE
+               MOVE RA-FX-RATE TO WS-SRC-RATE
+           END-IF
+           MOVE RA-GROSS TO RA-SOURCE-AVAIL
+           MOVE "RECEIPT" TO RA-SOURCE-TYPE
+           MOVE "NEW RECEIPT" TO RA-SOURCE-DOC.
+       2060-EXIT.
            EXIT.
 
        2100-ONE-ALLOCATION SECTION.

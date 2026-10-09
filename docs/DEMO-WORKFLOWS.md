@@ -19,8 +19,11 @@ below run from either STC site. Stock, sales orders, purchase orders and kits ar
 > between rehearsal and the real thing. Close `STERP.exe` before rebuilding; it locks
 > `STERPCOB.dll`.
 
-Users are switched with **Run as** on the sign-on dialog (signed on as `SYSADM`) or
-*System > Sign on*. All batch commands below run from the `STERP-App` folder.
+Users are switched with **Continue as** on the sign-on dialog (signed on as `SYSADM`), or from the
+running client with *File > Continue as User* (user) and *File > Select Company / Site* (company,
+site and business date). A real change of user, company, site or date closes every open window,
+because their data and permissions belong to the old context; *Cancel* leaves the session exactly
+as it was. All batch commands below run from the `STERP-App` folder.
 
 ---
 
@@ -31,12 +34,12 @@ collects the cash, and the ledger stays in balance throughout.
 
 | # | User | Where | Do this | Point out |
 |---|---|---|---|---|
-| 1 | `SALESREP` | *Sales > Sales Order Entry* | Open `SOS900008` (Thameside Demonstration Cycles, `C0090`) | Accepted, released, **picked** and billing-eligible; the customer is in good standing |
+| 1 | `SALESREP` | *Sales > Sales Order Entry* | Open `SOS900008` (Thameside Demonstration Cycles, `C0090`) | Accepted, released, **picked** and billing-eligible; the customer is in good standing. Its pick list is made by `demo-data.cmd` (SODEMO reserves and picks it through SORESV/PICKGEN): the 16 tyres in full, 6 of the 8 frames from one lot, with the other 2 on back order because one despatch line issues from one lot |
 | 2 | `SALESREP` | same | Flick through `SOS900003` (Solent Cycle Centre, `C0008`) and `SOS900004` (Fenland Cycle Repairs, `C0011`) | Credit hold (invoice > 30 days overdue) versus commercial hold (1,500.00 deposit not received): two different reasons an order cannot ship |
-| 3 | `WHSE` | *Sales > Despatch Confirmation* | Confirm the despatch for `SOS900008` | Stock is issued and the cost-of-sale journal is posted in the same unit of work. If `DSP0004` appears, enter the bin from the pick list (known gap) |
-| 4 | `ARCLERK` | *Sales > Sales Invoice Run* | Run `PREVIEW`, then `COMMIT` | Preview changes nothing; commit raises the invoice, the AR open item and the VAT |
-| 5 | `ARCLERK` | *Debtors > Customer Enquiry* (F5) | `C0001` Pennine Cycles | Invoices across every ageing bucket, a dispute, a part-paid invoice |
-| 6 | `ARCLERK` | *Debtors > Receipt Entry* (F6) | Receipt for `C0001` over two invoices, leave **4.00** short and write it off; repeat with **19.00** | 4.00 is inside the write-off tolerance; 19.00 is sent for approval (decision D-22) |
+| 3 | `WHSE` | *Sales > Despatch Confirmation* | Press **F2**, pick the pick list for `SOS900008` (or key `SOS900008` in *Order number* and press F5), then F10 | Stock is issued from the bin and lot named on the pick, and the cost-of-sale journal is posted in the same unit of work |
+| 4 | `ARCLERK` | *Sales > Sales Invoice Run* | Run `PREVIEW`, then `COMMIT` | Preview changes nothing; commit raises the invoice, the AR open item and the VAT. Billing is the AR clerk's job: posting an invoice needs `AR.INVOICE.POST`, so `SALESMGR` can open the run and preview the billing queue, but its `COMMIT` is refused (`ARI0050`) |
+| 5 | `ARCLERK` | *Debtors > Customer Enquiry* (F5) | `C0001` Pennine Cycles | One invoice, `SI-26-1001`, 120+ days overdue and part-paid (receipt `RC-26-0002` and credit note `CN-26-0001` leave 8,200.00), with an open collection case and a late-payment charge. For invoices in every ageing bucket run `AGEDDEBT` (*Debtors > Debtors Reports*); the disputed invoice is `SI-26-1008` on `C0009` |
+| 6 | `ARCLERK` | *Debtors > Receipt Entry* (F6) | Receipt for `C0001`, bank `GBP1`, gross **8,196.00**: allocate 8,196.00 to `SI-26-1001`, key **4.00** in *Write off* with a reason, *Preview*, then F10. Then key a receipt for `C0004` of 5,081.00 against `SI-26-1002` with **19.00** to write off and press *Preview* only | 4.00 is inside the 5.00 write-off tolerance and posts; for 19.00 the preview warns that posting would be held (`RCP0029`) because only `CREDMGR` holds `AR.WRITEOFF.APPROVE` (decision D-22). Preview values the receipt being keyed and posts or requests nothing |
 | 7 | `CREDMGR` | *Debtors > Credit Control Worklist* (F7) | Raise a dispute and a promise to pay on an overdue account | The account drops out of the next dunning run |
 | 8 | `FINCTRL` | *Reports > Controls and reconciliation > Control account reconciliation* | Run `RECONCTL` as at `20261031` | All eight control families still agree after everything above |
 
@@ -107,7 +110,7 @@ Stellar.
 | 1 | `SYSADM` | *System > Companies / Sites* | Compare STC and CAL | Separate VAT number, registered office in Manchester, Scottish bank-holiday calendar on the sites |
 | 2 | `FINCTRL` | *Reports > Controls and reconciliation > Legacy conversion load* (or command line) | `CONVLOAD CO=CAL FILE=data\legacy\CALAROPN.DAT CUTOVER=20260331` - `PREVIEW`, then `COMMIT`, then `COMMIT` again | Preview proves the file; commit creates real open items; the restart loads nothing twice. Repeat with `CALAPOPN.DAT` (creditors), `CALGLTB.DAT` (trial balance) and `CALSTOCK.DAT` (opening stock) |
 | 3 | `SALESREP` | *Sales > Sales Order Entry* | `SOC900001` draft awaiting approval (Highland Trail Bikes), `SOC900002` reserved (Firth of Forth Cycles), `SOC900005` amended and part-reserved | Same lifecycle as STC, smaller dataset - easier to follow |
-| 4 | `WHSE`, `ARCLERK` | *Despatch Confirmation*, then *Sales Invoice Run* | Despatch and invoice `SOC900004` (Clyde Demonstration Cycles, `K0090`) | The STC order-to-cash flow, shown in about five minutes |
+| 4 | `WHSE`, `ARCLERK` | *Despatch Confirmation*, then *Sales Invoice Run* | Despatch (F2 for the pick list) and invoice `SOC900004` (Clyde Demonstration Cycles, `K0090`) | The STC order-to-cash flow, shown in about five minutes. The pick issues the serial `SN26RAVELM001`, which becomes `ISSUED` |
 | 5 | `ARCLERK` | *Debtors > Customer Enquiry* | `K0005` Stellar Components Ltd and `K0003` Lothian Commuter Supply | **Intercompany:** Stellar is a Caledon customer (`K0005`) and a supplier (`T0001`); Caledon is customer `C0040` in STC |
 | 6 | `FINCTRL` | *Finance > VAT Return* | Period `27A1` (draft) | Each company has its own VAT return |
 | 7 | `FINCTRL` | `RECONCTL` | Run for `CO=CAL` as at `20261031` | The newly loaded entity reconciles like the established one |

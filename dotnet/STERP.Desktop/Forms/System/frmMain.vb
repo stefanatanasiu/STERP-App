@@ -134,17 +134,49 @@ Partial Public Class frmMain
                     d.ShowDialog(Me)
                 End Using
             Case "$COMPANY", "$RUNAS"
-                Using l As New frmLogin()
-                    If l.ShowDialog(Me) = DialogResult.OK Then
-                        Dim s As SterpSession = SterpSession.Current
-                        Me.Text = SterpConfig.ProductName & "  [" & s.CompanyCode & "] " & s.CompanyName
-                        BuildMenu()
-                        RefreshStatus()
-                    End If
-                End Using
+                ChangeSignOn()
             Case "$EXIT" : Me.Close()
             Case Else : SetMessage("Command " & command & " is not available.")
         End Select
+    End Sub
+
+    ' -------------------------------------------------------------------- toolbar
+    ''' <summary>
+    ''' File > Continue as User / Select Company / Site.  The sign-on dialog changes the shared
+    ''' session as the operator works in it, so the context is snapshotted first: Cancel puts it
+    ''' back untouched, and a real change of user, company, site or date closes every window
+    ''' opened under the old context (their data and permissions belong to it).  If a window
+    ''' refuses to close, the old context is restored and nothing changes.
+    ''' </summary>
+    Private Sub ChangeSignOn()
+        Dim before As SterpSession = SterpSession.Current.Snapshot()
+        Dim ok As Boolean
+        Using l As New frmLogin()
+            ok = (l.ShowDialog(Me) = DialogResult.OK)
+        End Using
+        If Not ok Then
+            SterpSession.Current.RestoreFrom(before)
+            SetMessage("Sign-on unchanged - still " & before.Title & " in " & before.CompanyCode & "/" & before.SiteCode & ".")
+            Return
+        End If
+        If SterpSession.Current.ContextDiffers(before) Then
+            Dim after As SterpSession = SterpSession.Current.Snapshot()
+            ' windows close (and ask about unsaved work) under the context they were opened in
+            SterpSession.Current.RestoreFrom(before)
+            For Each f As Form In Me.MdiChildren
+                f.Close()
+            Next
+            If Me.MdiChildren.Length > 0 Then
+                SetMessage("Sign-on unchanged - close the open windows first (" & Me.MdiChildren.Length & " still open).")
+                Return
+            End If
+            SterpSession.Current.RestoreFrom(after)
+        End If
+        Dim s As SterpSession = SterpSession.Current
+        Me.Text = SterpConfig.ProductName & "  [" & s.CompanyCode & "] " & s.CompanyName
+        BuildMenu()
+        RefreshStatus()
+        SetMessage("Signed on as " & s.Title & " in " & s.CompanyCode & "/" & s.SiteCode & ".")
     End Sub
 
     ' -------------------------------------------------------------------- toolbar

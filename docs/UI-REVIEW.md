@@ -84,18 +84,23 @@ non-colour severity cues `OK`, `BUSY`, `!  WARNING`, `## HOLD`, `*** ERROR` on t
 
 1. **57 "grid is empty / has no columns" reports.**  Most are correct behaviour: an entry screen
    opens with no criteria keyed and the grid now says so in words.  They are left in the report
-   deliberately - the sweep is also a data smoke test.
+   deliberately - the sweep is also a data smoke test.  *By design - no change.*
 2. **Costing maintenance definitions `CST.ELEMENT`, `CST.NRV`, `CST.POLICY`, `CST.RATES` do not
    load.**  `core.MaintDef` and `core.MaintColumn` both hold rows, yet `frmGenericMaint` falls
    back to the generic "File maintenance" caption with no columns, while `CST.LANDED` on the same
-   screen works.  The read behind the definition fails at run time.  Costing module data, not a
-   forms defect - raised as todo `cst-maintdef-columns`.
+   screen works.  **Not reproducible on current source (2026-10-08).**  On a database deployed from
+   the current `db\` folder, `core.usp_UiMaintDef` / `usp_UiMaintList` return the definition and
+   columns for STC and CAL, and a fresh `/qa-screens` sweep (company STC) opens all four screens
+   with their own captions.  The `CST.NRV` empty grid is only missing data.  Most likely the
+   reviewed database had older procedures.  Recommendation: redeploy `db\procs` (build-db) on any
+   database that still shows the generic caption, then re-run `ui-smoke.ps1`.
 3. **Demo data is split across companies.**  `cst.Job` only holds `STC` rows, so the Costing
    screens are empty under `CAL`.  Use `-Company STC` for a costing demo; this is why the
-   harness takes a company argument.
+   harness takes a company argument.  *By design - recommendation only:* seed a CAL costing job
+   only if a CAL costing demo is ever needed.
 4. The MDI child title bars are painted by the OS, so they follow the desktop theme rather than
    the Windows Classic scheme the client carries internally.  Nothing the application can change
-   without owner drawing every frame.
+   without owner drawing every frame.  *Accepted - not worth owner drawing.*
 
 ## 5. Representative screenshots (`docs\img\`)
 

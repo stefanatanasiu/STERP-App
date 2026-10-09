@@ -80,6 +80,42 @@ namespace STERP.Common
             Current = new SterpSession();
         }
 
+        /// <summary>
+        /// A copy of the whole context, taken before the sign-on dialog is shown again so that
+        /// cancelling it (or refusing to close windows opened under the old context) can put
+        /// the session back exactly as it was.
+        /// </summary>
+        public SterpSession Snapshot()
+        {
+            SterpSession c = new SterpSession();
+            c.RestoreFrom(this);
+            return c;
+        }
+
+        /// <summary>Copies every field of <paramref name="s"/> into this (shared) instance.</summary>
+        public void RestoreFrom(SterpSession s)
+        {
+            if (s == null || ReferenceEquals(s, this)) return;
+            UserCode = s.UserCode; DisplayName = s.DisplayName; WindowsLogin = s.WindowsLogin;
+            IsSysAdm = s.IsSysAdm; RealUserCode = s.RealUserCode;
+            CompanyCode = s.CompanyCode; CompanyName = s.CompanyName;
+            SiteCode = s.SiteCode; SiteName = s.SiteName;
+            BaseCurrency = s.BaseCurrency; Nation = s.Nation;
+            BusinessDate = s.BusinessDate; FiscalYear = s.FiscalYear; PeriodNo = s.PeriodNo;
+            PeriodStatus = s.PeriodStatus;
+            Access.Clear(); Access.AddRange(s.Access);
+            PermissionCache.Clear();
+            foreach (KeyValuePair<string, bool> p in s.PermissionCache) PermissionCache[p.Key] = p.Value;
+        }
+
+        /// <summary>True when the user, company, site or business date differ from <paramref name="s"/>.</summary>
+        public bool ContextDiffers(SterpSession s)
+        {
+            return s == null || UserCode != s.UserCode || RealUserCode != s.RealUserCode ||
+                   CompanyCode != s.CompanyCode || SiteCode != s.SiteCode ||
+                   BusinessDate.Date != s.BusinessDate.Date;
+        }
+
         /// <summary>Idempotency key for a repeatable instruction (COM-015).</summary>
         public string NewCorrelationId() { return Guid.NewGuid().ToString(); }
     }

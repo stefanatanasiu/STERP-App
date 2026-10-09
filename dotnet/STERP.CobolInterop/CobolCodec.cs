@@ -162,12 +162,22 @@ namespace STERP.CobolInterop
         }
 
         /// <summary>COBOL INITIALIZE: alphanumerics to spaces, numerics to zero.</summary>
-        public static void Initialise(byte[] b, CobolField f)
+        public static void Initialise(byte[] b, CobolField f) { Initialise(b, f, 0); }
+
+        // Child offsets describe the first occurrence of every enclosing OCCURS group, so
+        // each occurrence of a group is initialised by shifting its children (DSP0004:
+        // DS-LINES(2..30) used to stay LOW-VALUES and read as "not blank" in COBOL).
+        private static void Initialise(byte[] b, CobolField f, int shift)
         {
-            if (f.IsGroup) { foreach (CobolField c in f.Children) Initialise(b, c); return; }
             for (int o = 0; o < f.Occurs; o++)
             {
-                int at = f.Offset + o * f.ElementLength;
+                int delta = shift + o * f.ElementLength;
+                if (f.IsGroup)
+                {
+                    foreach (CobolField c in f.Children) Initialise(b, c, delta);
+                    continue;
+                }
+                int at = f.Offset + delta;
                 if (f.Type == CobolType.Alphanumeric) PutText(b, at, f.ElementLength, "");
                 else PutNumber(b, at, f, 0m);
             }

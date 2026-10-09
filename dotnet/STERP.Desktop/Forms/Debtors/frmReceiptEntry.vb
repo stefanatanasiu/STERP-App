@@ -13,6 +13,8 @@ Public Class frmReceiptEntry
     Inherits BaseForm
 
     Private Const AllocColumn As String = "AllocateAmount"
+    Private Const WriteOffColumn As String = "WriteOffAmount"
+    Private Const WriteOffReasonColumn As String = "WriteOffReason"
 
     Private ReadOnly _svc As New DebtorsService()
     Private _items As DataTable
@@ -65,15 +67,24 @@ Public Class frmReceiptEntry
                   Dim ds As DataSet = _svc.Allocatable(customer, Currency())
                   _items = ds.Tables(0)
                   _items.Columns.Add(AllocColumn, GetType(Decimal)).DefaultValue = 0D
+                  _items.Columns.Add(WriteOffColumn, GetType(Decimal)).DefaultValue = 0D
+                  _items.Columns.Add(WriteOffReasonColumn, GetType(String)).DefaultValue = ""
                   For Each r As DataRow In _items.Rows
                       r(AllocColumn) = 0D
+                      r(WriteOffColumn) = 0D
+                      r(WriteOffReasonColumn) = ""
                   Next
                   GridHelper.Bind(grdItems, _items)
                   GridHelper.Decorate(grdItems, AllocColumn, "Allocate " & Currency(), "MONEY", 100)
+                  GridHelper.Decorate(grdItems, WriteOffColumn, "Write off " & Currency(), "MONEY", 90)
+                  GridHelper.Decorate(grdItems, WriteOffReasonColumn, "Write off reason", "TEXT", 160)
                   grdItems.Columns(AllocColumn).DisplayIndex = 0
+                  grdItems.Columns(WriteOffColumn).DisplayIndex = 1
+                  grdItems.Columns(WriteOffReasonColumn).DisplayIndex = 2
                   grdItems.ReadOnly = False
                   For Each c As DataGridViewColumn In grdItems.Columns
-                      c.ReadOnly = (c.DataPropertyName <> AllocColumn)
+                      c.ReadOnly = (c.DataPropertyName <> AllocColumn AndAlso c.DataPropertyName <> WriteOffColumn AndAlso
+                                    c.DataPropertyName <> WriteOffReasonColumn)
                   Next
                   _posted = False
                   Dim note As String = ""
@@ -85,7 +96,7 @@ Public Class frmReceiptEntry
                              Fmt.Money(Fmt.Dec(ServiceBase.Col(h, "SmallDifferenceToleranceGBP", 0D))) & " | "
                   End If
                   SetStatus(note & grdItems.Rows.Count & " open item(s) in " & Currency() &
-                            ".  Key the amounts, press Preview, then F10 to post.", "")
+                            ".  Key the amounts (and any small difference to write off, with its reason), press Preview, then F10 to post.", "")
               End Sub)
     End Sub
 
@@ -95,7 +106,7 @@ Public Class frmReceiptEntry
         Dim total As Decimal = 0D
         If _items Is Nothing Then Return total
         For Each r As DataRow In _items.Rows
-            total += Fmt.Dec(r(AllocColumn))
+            total += Fmt.Dec(r(AllocColumn)) + Fmt.Dec(r(WriteOffColumn))
         Next
         Return total
     End Function
@@ -110,11 +121,12 @@ Public Class frmReceiptEntry
         Dim n As Integer = 0
         For Each r As DataRow In _items.Rows
             Dim apply As Decimal = Fmt.Dec(r(AllocColumn))
-            If apply = 0D Then Continue For
+            Dim writeOff As Decimal = Fmt.Dec(r(WriteOffColumn))
+            If apply = 0D AndAlso writeOff = 0D Then Continue For
             n += 1
             If n > DebtorsService.MaxAllocations Then Exit For
             _svc.AddAllocation(ca, n, Fmt.Int(r("OpenItemId")), Fmt.Str(r("DocumentNumber")),
-                               Fmt.Str(r("CurrencyCode")), apply)
+                               Fmt.Str(r("CurrencyCode")), apply, writeOff, Fmt.Str(r(WriteOffReasonColumn)).Trim())
         Next
         Return ca
     End Function
@@ -133,6 +145,12 @@ Public Class frmReceiptEntry
                   Dim ca As CommArea = BuildArea()
                   Dim res As CobolResult = _svc.RunReceipt(ca, "PREVIEW")
                   ShowTotals(ca)
+                  If res IsNot Nothing AndAlso res.ReturnCode = 6 Then
+                      ' A preview requests nothing - say what posting would do instead of the hold text.
+                      ShowWarning(res.Message & " - posting this receipt would be held. Preview only: nothing " &
+                                  "has been posted and no approval has been requested.", res.ReasonCode)
+                      Return
+                  End If
                   If Not ShowResult(res) Then Return
                   SetStatus("Preview only - nothing has been posted.  Residual " &
                             DebtorsService.AreaMoney(ca, "RA-RESIDUAL") & ", unallocated cash " &

@@ -135,8 +135,8 @@ Sign-on is **Windows authentication** — there are no passwords anywhere in STE
 (`db\seed\03-core-roles-users.sql`) maps the Windows account that deployed the database to the
 `SYSADM` user, so the sign-on dialog shows your Windows login and resolves it to `SYSADM`.
 
-Signed on as `SYSADM` you can switch identity with the **Run as** box on the sign-on dialog (and
-from *System → Sign on*), which is how the permission, segregation-of-duties and approval rules are
+Signed on as `SYSADM` you can switch identity with the **Continue as** box on the sign-on dialog (and
+from *File → Continue as User* / *File → Select Company / Site*), which is how the permission, segregation-of-duties and approval rules are
 demonstrated. The seeded users (user code = role code, company `STC`, site `RDG` unless shown):
 
 | User | Who they are | User | Who they are |

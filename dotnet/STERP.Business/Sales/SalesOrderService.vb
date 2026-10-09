@@ -26,6 +26,27 @@ Public Class SalesOrderService
         "AND (@Search IS NULL OR @Search = '' OR OrderNumber LIKE @Search + '%' OR CustomerCode LIKE @Search + '%') " &
         "ORDER BY OrderNumber"
 
+    ''' <summary>
+    ''' F2 pick list picker for Despatch Confirmation: this company and site, not cancelled, with
+    ''' picked stock still waiting to go out (picked on the schedule but not yet despatched against
+    ''' it).  @Search matches the pick list, the order or the
+    ''' customer; @Argument, when given, restricts the list to one order.
+    ''' </summary>
+    Public Const PickListPickSql As String =
+        "SELECT p.PickListRef, p.OrderNumber, p.CustomerCode, p.Status, p.RequiredDate, p.WarehouseCode " &
+        "FROM so.PickList p WHERE p.CompanyCode = @CompanyCode AND p.SiteCode = @SiteCode " &
+        "AND p.Status <> 'CANCELLED' " &
+        "AND (@Argument IS NULL OR @Argument = '' OR p.OrderNumber = @Argument) " &
+        "AND (@Search IS NULL OR @Search = '' OR p.PickListRef LIKE @Search + '%' " &
+        "OR p.OrderNumber LIKE @Search + '%' OR p.CustomerCode LIKE @Search + '%') " &
+        "AND EXISTS (SELECT 1 FROM so.PickListLine l JOIN so.DeliverySchedule s " &
+        "ON s.SalesOrderLineId = l.SalesOrderLineId AND s.ScheduleNo = l.ScheduleNo " &
+        "WHERE l.PickListId = p.PickListId AND l.PickedQty > 0 AND s.Quantity > s.DespatchedQty " &
+        "AND s.DespatchedQty < (SELECT SUM(x.PickedQty) FROM so.PickListLine x JOIN so.PickList xp " &
+        "ON xp.PickListId = x.PickListId WHERE xp.Status <> 'CANCELLED' " &
+        "AND x.SalesOrderLineId = l.SalesOrderLineId AND x.ScheduleNo = l.ScheduleNo)) " &
+        "ORDER BY p.PickListRef"
+
     Private Const HeaderSql As String =
         "SELECT o.OrderNumber, o.OrderType, o.SiteCode, o.CustomerCode, c.LegalName AS CustomerName, " &
         "o.CustomerOrderRef, o.OrderDate, o.CurrencyCode, o.TermsCode, o.SalespersonCode, " &
@@ -44,8 +65,10 @@ Public Class SalesOrderService
 
     Private Const PickLineSql As String =
         "SELECT l.LineNum, l.ItemCode, l.RequiredQty, l.PickedQty, l.ShortQty, l.WarehouseCode, " &
-        "l.LocationCode, l.LotCode, l.SerialNo, l.ScheduleNo, l.Status, h.OrderNumber, h.CustomerCode " &
+        "l.LocationCode, l.LotCode, l.SerialNo, l.ScheduleNo, l.Status, h.OrderNumber, h.CustomerCode, " &
+        "o.LineNum AS OrderLineNum " &
         "FROM so.PickListLine l JOIN so.PickList h ON h.PickListId = l.PickListId " &
+        "LEFT JOIN so.SalesOrderLine o ON o.SalesOrderLineId = l.SalesOrderLineId " &
         "WHERE h.CompanyCode = @CompanyCode AND h.PickListRef = @PickListRef ORDER BY l.LineNum"
 
     ''' <summary>COMMAREA of the last link, so the screen can label every figure it shows.</summary>
@@ -67,6 +90,13 @@ Public Class SalesOrderService
     Public Function PickLines(ByVal pickListRef As String) As DataTable
         If Not Deployed("so.PickListLine") Then Return New DataTable()
         Return Query(PickLineSql, "@CompanyCode", Company, "@PickListRef", pickListRef)
+    End Function
+
+    ''' <summary>Despatchable pick lists of one order at the signed-on site (same rules as the F2 list).</summary>
+    Public Function PicksForOrder(ByVal orderNumber As String) As DataTable
+        If Not Deployed("so.PickList") Then Return New DataTable()
+        Return Query(PickListPickSql, "@CompanyCode", Company, "@SiteCode", Site,
+                     "@Search", "", "@Argument", orderNumber)
     End Function
 
     ' ------------------------------------------------------------------ price (SO-004)
@@ -314,8 +344,12 @@ Public Class SalesOrderService
     Public Sub AddDespatchLine(ByVal ca As CommArea, ByVal index As Integer, ByVal orderLine As Integer,
                                ByVal item As String, ByVal description As String, ByVal picked As Decimal,
                                ByVal despatched As Decimal, ByVal uom As String, ByVal lot As String,
-                               ByVal serial As String)
+                               ByVal serial As String, Optional ByVal schedule As Integer = 0,
+                               Optional ByVal warehouse As String = "", Optional ByVal location As String = "")
         ca.SetInt("DS-L-LINE-NUM(" & index & ")", index)
+        ca.SetInt("DS-L-SCHEDULE(" & index & ")", schedule)
+        ca.SetString("DS-L-WHSE(" & index & ")", warehouse)
+        ca.SetString("DS-L-LOCATION(" & index & ")", location)
         ca.SetInt("DS-L-ORDER-LINE(" & index & ")", orderLine)
         ca.SetString("DS-L-ITEM(" & index & ")", item)
         ca.SetString("DS-L-DESC(" & index & ")", description)

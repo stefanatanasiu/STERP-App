@@ -123,6 +123,16 @@ Public Class DebtorsService
         ca.SetInt("RA-ALLOC-CNT", index)
     End Sub
 
+    ''' <summary>As above, plus a small-difference write off and its reason (AR-012, D-22).  The
+    ''' engine applies the write off limit and refuses a write off without a reason.</summary>
+    Public Sub AddAllocation(ByVal ca As CommArea, ByVal index As Integer, ByVal openItemId As Integer,
+                             ByVal documentNumber As String, ByVal currencyCode As String, ByVal apply As Decimal,
+                             ByVal writeOff As Decimal, ByVal writeOffReason As String)
+        AddAllocation(ca, index, openItemId, documentNumber, currencyCode, apply)
+        ca.SetDecimal("RA-A-WRITEOFF(" & index & ")", writeOff)
+        ca.SetString("RA-A-WO-REASON(" & index & ")", If(writeOffReason, ""))
+    End Sub
+
     ''' <summary>Links RCPTALOC with PREVIEW (no business effect), RECEIPT (the cash effect) or
     ''' ALLOCATE (applies the instructions, no second cash effect) - AR-009, AR-010.</summary>
     Public Function RunReceipt(ByVal ca As CommArea, ByVal func As String) As CobolResult

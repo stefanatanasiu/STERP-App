@@ -132,7 +132,8 @@ Public Class LoginService
         Dim msg As String = SignOnAs(userCode)
         If msg = "" Then
             SterpSession.Current.RealUserCode = real
-            SterpSession.Current.IsSysAdm = False
+            ' continuing as SYSADM again is the administrator's own session, not a demonstration
+            SterpSession.Current.IsSysAdm = (userCode = real)
             AuditService.Note("RUNAS", userCode, "SYSADM continued the session as " & userCode)
         End If
         Return msg
