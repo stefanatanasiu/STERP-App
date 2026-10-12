@@ -45,6 +45,7 @@ Public Class frmCustomerEnquiry
     End Function
 
     Private Sub LoadData()
+        ClearResults()
         Dim customer As String = txtCustomer.Text.Trim().ToUpperInvariant()
         If customer = "" Then
             SetStatus("Key an account first, or press F2 for the account list.", "!  WARNING")
@@ -62,6 +63,16 @@ Public Class frmCustomerEnquiry
                   SetStatus(grdItems.Rows.Count & " open item(s) at " & Fmt.Date(AsAt()) &
                             ".  F2 account list, F5 refresh, F3 close.", "")
               End Sub)
+    End Sub
+
+    Private Sub ClearResults()
+        lblCustomerName.Text = ""
+        For Each label As Label In Metric.Values
+            label.Text = ""
+        Next
+        GridHelper.Bind(grdAged, Nothing)
+        GridHelper.Bind(grdItems, Nothing)
+        lblItemsCaption.Text = "Open items, oldest due date first:"
     End Sub
 
     ''' <summary>Result set 1 - ar.vw_CustomerBalance, the credit control position.</summary>

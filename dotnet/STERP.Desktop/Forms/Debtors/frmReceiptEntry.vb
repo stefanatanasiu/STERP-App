@@ -19,6 +19,8 @@ Public Class frmReceiptEntry
     Private ReadOnly _svc As New DebtorsService()
     Private _items As DataTable
     Private _posted As Boolean
+    Private _loadedCustomer As String = ""
+    Private _loadedCurrency As String = ""
 
     Public Sub New()
         InitializeComponent()
@@ -57,6 +59,14 @@ Public Class frmReceiptEntry
 
     ''' <summary>The items this customer may be credited with, plus a column for the clerk.</summary>
     Private Sub LoadItems()
+        _items = Nothing
+        _loadedCustomer = ""
+        _loadedCurrency = ""
+        _posted = False
+        GridHelper.Bind(grdItems, Nothing)
+        For Each label As Label In Total.Values
+            label.Text = ""
+        Next
         Dim customer As String = txtCustomer.Text.Trim().ToUpperInvariant()
         If customer = "" Then
             SetStatus("Key a customer account first, or press F2 for the account list.", "!  WARNING")
@@ -87,6 +97,8 @@ Public Class frmReceiptEntry
                                     c.DataPropertyName <> WriteOffReasonColumn)
                   Next
                   _posted = False
+                  _loadedCustomer = customer
+                  _loadedCurrency = Currency()
                   Dim note As String = ""
                   If ds.Tables.Count > 2 AndAlso ds.Tables(2).Rows.Count > 0 Then
                       Dim h As DataRow = ds.Tables(2).Rows(0)
@@ -172,6 +184,7 @@ Public Class frmReceiptEntry
                       SetStatus("The receipt was not recorded: " & res.Display, "*** ERROR")
                       Return
                   End If
+                  _posted = True
                   If ca.GetInt("RA-ALLOC-CNT") > 0 Then
                       res = _svc.RunReceipt(ca, "ALLOCATE")
                       ShowTotals(ca)
@@ -211,8 +224,20 @@ Public Class frmReceiptEntry
 
     Private Function Ready() As Boolean
         grdItems.EndEdit()
+        If _posted Then
+            SetStatus("This receipt has already been recorded. Press F5 to start another receipt.", "!  WARNING")
+            Return False
+        End If
         If _items Is Nothing Then
             SetStatus("Press F5 for the open items of this account first.", "!  WARNING")
+            Return False
+        End If
+        If txtCustomer.Text.Trim().ToUpperInvariant() <> _loadedCustomer OrElse Currency() <> _loadedCurrency Then
+            For Each label As Label In Total.Values
+                label.Text = ""
+            Next
+            SetStatus("The customer or currency has changed. Press F5 to reload the open items before previewing or posting.",
+                      "!  WARNING")
             Return False
         End If
         If Fmt.Dec(txtAmount.Text) <= 0D Then

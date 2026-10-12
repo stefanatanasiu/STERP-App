@@ -152,6 +152,16 @@ namespace STERP.Tests.Acceptance
             St.True(Acc.Int("SELECT COUNT(*) FROM po.ReceiptLine l JOIN po.Receipt rc ON rc.ReceiptId = l.ReceiptId " +
                             "WHERE rc.CompanyCode = @c AND rc.PurchaseOrderNumber = @o", "@c", Acc.Co, "@o", orderNo) > 0,
                     "the confirmed receipt wrote the lines it counted");
+            St.Eq(qty, Acc.Dec("SELECT SUM(ReceivedQty) FROM po.PurchaseOrderLine " +
+                               "WHERE CompanyCode = @c AND OrderNumber = @o", "@c", Acc.Co, "@o", orderNo),
+                  "the receipt reduces the order's outstanding quantity");
+            St.Eq(qty, Acc.Dec("SELECT SUM(ReceivedQty) FROM po.PurchaseSchedule " +
+                               "WHERE CompanyCode = @c AND OrderNumber = @o", "@c", Acc.Co, "@o", orderNo),
+                  "the delivery schedule records the counted quantity");
+            St.Eq(0, Acc.Int("SELECT COUNT(*) FROM po.ReceiptLine l JOIN po.Receipt rc ON rc.ReceiptId = l.ReceiptId " +
+                             "WHERE rc.CompanyCode = @c AND rc.PurchaseOrderNumber = @o AND l.PurchaseOrderLineId IS NULL",
+                             "@c", Acc.Co, "@o", orderNo),
+                  "every counted line identifies its actual purchase order line");
             St.Eq(0, Acc.Int("SELECT COUNT(*) FROM po.ReceiptLine l JOIN po.Receipt rc ON rc.ReceiptId = l.ReceiptId " +
                              "WHERE rc.CompanyCode = @c AND rc.PurchaseOrderNumber = @o AND l.AcceptedQty < 0",
                              "@c", Acc.Co, "@o", orderNo), "a receipt never accepts a negative quantity");

@@ -32,10 +32,10 @@ Public Class InvoiceService
     ''' <summary>APINVREG decides whether this document has been seen before.  An exact repeat is
     ''' refused; a near miss is reported for the clerk to judge (AP-004).</summary>
     Public Function DuplicateCheck(ByVal supplier As String, ByVal docRef As String, ByVal gross As Decimal,
-                                   ByVal docDate As Date) As CobolResult
+                                   ByVal docDate As Date, Optional ByVal documentType As String = "INVOICE") As CobolResult
         Dim ca As CommArea = NewArea("APINVREGCA")
         ca.SetString("IR-SUPPLIER", supplier)
-        ca.SetString("IR-DOC-TYPE", "INVOICE")
+        ca.SetString("IR-DOC-TYPE", documentType)
         ca.SetString("IR-SUPPLIER-REF", docRef)
         ca.SetDecimal("IR-STATED-GROSS", gross)
         ca.SetString("IR-DOCUMENT-DATE", Fmt.Yyyymmdd(docDate))

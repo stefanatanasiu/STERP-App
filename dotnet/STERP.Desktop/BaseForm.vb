@@ -119,7 +119,7 @@ Public Class BaseForm
     End Function
 
     Protected Sub CloseForm()
-        If CanClose() Then Me.Close()
+        Me.Close()
     End Sub
 
     Protected Overrides Sub OnFormClosing(ByVal e As FormClosingEventArgs)

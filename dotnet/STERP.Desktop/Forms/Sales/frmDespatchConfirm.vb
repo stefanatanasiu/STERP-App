@@ -45,9 +45,8 @@ Public Class frmDespatchConfirm
         Return Confirm("Despatch quantities have been keyed but not confirmed.  Abandon them?")
     End Function
 
-    Private Function DespatchDate() As Date
-        Dim d As Date? = Fmt.ParseDate(txtDespatchDate.Text)
-        Return If(d.HasValue, d.Value, SterpSession.Current.BusinessDate)
+    Private Function DespatchDate() As Date?
+        Return Fmt.ParseDate(txtDespatchDate.Text)
     End Function
 
     ''' <summary>Reads the pick list and offers the picked quantity as the despatch quantity -
@@ -175,10 +174,16 @@ Public Class frmDespatchConfirm
             SetStatus("Key at least one despatch quantity.", "!  WARNING")
             Return
         End If
+        Dim despatchOn As Date? = DespatchDate()
+        If Not despatchOn.HasValue Then
+            SetStatus("Enter a valid despatch date in dd/MM/yyyy form before confirming.", "!  WARNING")
+            txtDespatchDate.Focus()
+            Return
+        End If
         If Not Confirm("Confirm the despatch of pick list " & txtPickRef.Text.Trim() & " for order " &
                        txtOrder.Text.Trim() & "?") Then Return
         Guard(Sub()
-                  Dim ca As CommArea = BuildArea()
+                  Dim ca As CommArea = BuildArea(despatchOn.Value)
                   Dim res As CobolResult = _svc.Despatch(ca, "CONFIRM")
                   If Not ShowResult(res) Then
                       Outcome("", 0D, 0D, "NOT CONFIRMED (" & res.Severity & ") - " & res.Display &
@@ -197,9 +202,9 @@ Public Class frmDespatchConfirm
               End Sub)
     End Sub
 
-    Private Function BuildArea() As CommArea
+    Private Function BuildArea(ByVal despatchOn As Date) As CommArea
         Dim ca As CommArea = _svc.NewDespatch(_loadedOrder, _loadedPick, lblCustomer.Text.Trim(),
-                                              DespatchDate(), txtCarrier.Text.Trim(), txtCarrierRef.Text.Trim(),
+                                              despatchOn, txtCarrier.Text.Trim(), txtCarrierRef.Text.Trim(),
                                               Fmt.Int(txtPacks.Text), Fmt.Dec(txtWeight.Text),
                                               txtIncoterms.Text.Trim(), txtIncoPlace.Text.Trim(),
                                               chkExport.Checked, txtDestination.Text.Trim(),

@@ -235,3 +235,202 @@ This is a local demonstration environment. File-based payment and tax outputs mu
 remain local; no bank, tax authority or external trading partner is contacted.
 Coverage and final counts will be updated from observed results, not inferred from
 the existing traceability tags.
+
+## GUI QA and repairs - 12 October 2026
+
+Run `gui-qa-20261012T082631Z-9283a339` uses the source-deployed database
+`STERP_QA_GUI_20261012_9283a339` and isolated runtime
+`run\work\functional-qa-20261012-9283a339`. Both ADO.NET and native ODBC use that
+database. Production database creation and shared SQL Agent jobs were excluded.
+Release/x86 managed and COBOL builds, all five demo drivers, and baseline
+STC/CAL RECONCTL completed successfully. Control bridging is baseline-only and
+will not be repeated after GUI transactions. This is user-authorised legacy
+functional QA, not a modernisation stage transition.
+
+Evidence identifiers refer to live control-state JSON and app-only PNGs below
+this runtime's `evidence` directory. Native mouse/keyboard input exercises the
+client; database checks verify effects rather than substitute for GUI actions.
+Payment and tax files remain local.
+
+### Defects recorded before repair
+
+The historical findings above are preserved. The following table records this
+run's independent observations and supersedes their earlier open statuses.
+GUI-012 through GUI-027 have passed the focused regression suite and native GUI
+retests. The final control proof exposed the additional inventory integration
+finding GUI-028, which remains open.
+
+| Finding | Confidence | Current-run reproduction | Repair / retest status |
+|---|---|---|---|
+| GUI-012 | observed | C0001 Customer Enquiry retains Pennine's GBP8,200 results after blank/unknown refresh (`019`-`021`). | Fixed: clear all account-dependent grids, metrics and statement caption. Loaded, blank and unknown retests passed (`101`-`103`). |
+| GUI-013 | observed | Receipt Entry retains allocations after blank refresh and previews C0001 instructions under a changed C0004 header, receiving RCP0024 (`022`-`025`). No wrong-customer receipt committed. | Fixed: reset allocations/totals and require loaded account/currency identity; prevent repeat cash posting. Blank/context/preview/post/replay retests passed (`104`-`107`, `111`-`113`). |
+| GUI-014 | observed | F3/Yes repeats the abandon prompt; No keeps the form and a second Yes is required (`026b`, `027`, `028`). | Fixed: the closing event performs the single unsaved-work check. No retains the form; one Yes closes it (`108`-`110`). |
+| GUI-015 | observed | Promise toolbar is inert; F10 opens the promise dialog, cancelled in this run (`029`-`031`). | Fixed: toolbar invokes the existing promise workflow. Mouse retest opened the dialog (`114`); new promise/dispute commits were not exercised. |
+| GUI-016 | observed | Empty parent leaves the previous cake explosion visible (`034`, `035`). | Fixed: clear results before a new/failed enquiry. Blank-parent retest passed (`118`). |
+| GUI-017 | observed | Zero quantity becomes one (GBP67.28); invalid date becomes today (GBP602.45 for twelve cakes) (`036`, `037`). | Fixed: validate positive quantity and strict dates without substituting successful calculations. Refusals clear the prior result (`119`, `120`); valid bike/cake figures remain unchanged (`115`-`117`). |
+| GUI-018 | observed | Blank Where Used refresh retains nine DEMO-PIN parent rows (`038`, `039`). | Fixed: clear results and stale actionable parent selection. Loaded/blank/selection retests passed (`121`-`123`). |
+| GUI-019 | observed | FY2027STD comparison loses the set name/context; its Impact reports BOMDEMO after refreshing the set list (`041`-`043`). No set was activated or approved. | Fixed: retain the comparison target and capture the action target before refresh. Comparison and Impact identify FY2027STD (`124`-`126`); approval/activation were cancelled and controls were not weakened. |
+| GUI-020 | observed | Mouse input cannot reach Counted, while keyboard traversal accepts 40, GOODSIN and a lot (`050`, `051`). | Fixed: decorative groups are behind sibling editors. Ordinary mouse entry succeeds (`129`). |
+| GUI-021 | observed | Changing the keyed header after loading/counting PO00000004 can confirm its cached delivery (`052`, `053`). | Fixed: require the keyed header to match the loaded delivery, and discard cached state before reloading. Changed-header confirmation/count are refused (`130`, `131`). |
+| GUI-022 | observed | The default ON-RECEIPT reaches SQL but violates its three-code ownership constraint (`054`). | Fixed: use RECEIPT, INCOTERMS and DROPSHIP. The repaired GUI posts RECEIPT successfully (`132`, `206`, `210`, `211`); alternate ownership posting branches were not separately GUI-tested. |
+| GUI-023 | observed | A missing required lot on PO00000004 reports generic RCP0003 despite 40 outstanding units (`049`). | Fixed: retain the specific per-line traceability refusal and allow its correction without losing the loaded delivery (`128`, `129`, `132`). |
+| GUI-024 | observed | GRN00000004 posts 40 units, stock movement 39 and balanced GBP639.79 journal 153, but has no PurchaseOrderLineId; order quantities remain zero, schedule OPEN and header NOTRECEIVED (`132b-receipt-database-before-fix.txt`). | Fixed: atomic receipt/order linkage, quantities and delivery status, inspection acceptance propagation, and actual-line reversal loading. Full/partial/remaining/reversal/replay GUI checks passed (`206`-`211`). SQL proves final 45 received/accepted, linked receipts, COMPLETE/FULLRECEIVED and balanced journals (`229`). Completed-order enquiry offers zero lines (`230`). The pre-fix GRN remains unchanged as evidence. |
+| GUI-025 | observed | VATOWNER clicks box 1 and Drill down, but button focus loses the selected box and no records load (`145`, `146`). | Fixed: retain the last explicitly selected box independently of button focus; preparation clears selection. Actual mouse retests loaded three box-1 rows and six box-4 rows (`202`, `203`), with a real-focus regression test. |
+| GUI-026 | observed | Existing PI-26-0001 falsely reports no exact duplicate (`213`, `217`). Seed keys retain punctuation excluded by executable STRUTIL DOCREF, and the screen always checks INVOICE, including PC-26-0001 (`219`). | Fixed: the seed's ASCII letter/digit key matches executable default KEEP semantics, and the screen passes DocumentType. Invoice and credit-note retests both identify their existing register with APR0010 (`225`, `226`). QA correction touched only mismatched DEMO-created keys after a collision check. |
+| GUI-027 | observed | PPS00000001 Totals reports zero lines/amounts and blank status (`215`) although ten lines and stored nonzero totals exist (`216`). TOTALS requires ProposalId, but the facade supplies only a reference. | Fixed: load company-scoped identity/header totals before the native read. GUI proves six selected, GBP19,596 principal less GBP1,080 credits = GBP18,516, four exclusions and RELEASED (`227`). Unknown reference explicitly refuses APP0000 and removes prior totals/status (`228`, regression). |
+| GUI-028 | observed | Final STC RECONCTL shows INVENTORY subsidiary GBP1,060,051.85 versus GL GBP1,061,983.95, a GBP1,932.10 difference. This exactly equals GUI stock movements 37-43; none has a linked cost-pool history row, and the affected cst.ItemCost positions remain unchanged (`231`). | Open: financial stock-to-valuation integration, not a receipt delivery-status regression. The stock contract does not maintain the valuation pools used by RECONCTL/CSTINVAL. A repair must resolve site versus wildcard pools, STD versus MWA/FIFO values, allowance/history and replay semantics rather than force a reconciliation adjustment. |
+
+### Initial workflow results
+
+- STC/RDG order-to-cash: SOS900008 despatched as DNS00000002, with GBP371.79
+  COGS and JNS00000083. Invoice preview left 24 invoices; commit created exactly
+  one, raising the count to 25 (`005`-`018`). Credit/commercial holds remained
+  distinct; blank/unknown sales-order refreshes cleared their old data.
+- Bike quantity ten: 95 occurrences, depth four, GBP568.25 unit cost. Cake
+  quantity twelve: GBP50.20 unit cost (`032`-`034`).
+- DEMO-PIN: nine total parent rows, six direct, two upward levels (`038`).
+- All five kit lifecycle examples loaded, including KIT0001001 WIP GBP1,842.50
+  (`046-kit-*`). Completed KIT00001001 traced forward and backward (`047`, `048`).
+- CST27000 loaded with its two sub-jobs (`044`). Engineering Changes is not
+  offered in ENGINEER's Bills of Material menu; that documented path is not
+  counted as executed.
+
+### Instrumentation limitations
+
+A read-only UI Automation GridPattern.GetItem probe coincided with a CLR access
+violation and exit of the isolated client (PID 40728). Causal attribution to
+application logic is unknown: this was not an ordinary user workflow, and is
+not counted as a confirmed product defect. The client was relaunched with
+explicit QA-only inherited database settings; subsequent checks use ordinary
+native input and do not repeat that probe. Early focus/selection attempts and
+DPI capture artefacts are also excluded from product findings.
+
+An additional bounded sign-on automation call did not return after the final
+receipt enquiry; its helper and owned client were stopped. Earlier and later
+successful session changes are evidenced, but this timeout is not attributed to
+application logic. It is excluded from the product defect count.
+
+### Verified repairs and durable effects
+
+- Release/x86 managed build passed after the final AP repairs. The purchasing
+  native build passed with 152 LINKable programs / 166 objects. No framework or
+  dependency upgrades were made.
+- The final focused TAP run has **33 tests, zero failures, zero skips**:
+  15 GUI/service regressions, three receipt-state cases and 15 existing purchasing
+  cases. Evidence: `final-focused-regression-tests-ap.txt`. The updated complete
+  procure-to-pay acceptance chain was not run.
+- C0001 receipt RCS00000001 records GBP8,196 cash and GBP4 write-off, leaving
+  SI-26-1001 at zero. A repeat post is refused. C0004's GBP19 write-off was
+  preview-only: no request, approval or receipt was committed.
+- PO00000005: GRN00000005 received 45 and was reversed once; repeated reversal
+  wrote nothing further. GRN00000006 received 20 and GRN00000007 the remaining 25.
+  The final order/schedule quantities are 45 received and accepted, with
+  COMPLETE/FULLRECEIVED status and real order-line links (`229`). Four balanced
+  original/reversal/partial/final journals are JNS00000088-91. This repair makes
+  delivery-state bookkeeping atomic; it does **not** claim that the existing
+  stock, receipt and journal stages are one global transaction.
+- GLCLERK's balanced GBP1 journal validates in October; 15 May 2026 is correctly
+  refused as hard-closed 202602. Returning to October posts exactly one
+  JNS00000092, with GBP1 on each side (`222`-`224`, `229`).
+
+### Additional demo workflow coverage
+
+- Purchasing: eight order status/variant fixtures loaded (`134-purchase-*`).
+  BUYER's approval attempt was refused (`136`). PURMGR approved PO00000002
+  through the Approvals Inbox (`153`-`155`): core approval is APPROVED with
+  DecidedBy PURMGR, but the purchase-order header remained AWAITAPPROVAL.
+  Header-state reconciliation by a subsequent order-engine action is not claimed.
+- CAL/GLA sales: SOC900001, SOC900002 and SOC900005 loaded. CAL/LIV SOC900003
+  displayed its credit hold. Accept/release first refused missing
+  InvoiceCustomerCode with SOA0002, so a successful credit override/release was
+  not exercised (`140`-`143`).
+- CAL customer enquiries loaded K0005 (one open item) and K0003 (two), under
+  the CAL company context (`220-cal-customer-*`).
+- VAT: FINCTRL lacks PREPARE by design; VATOWNER is the preparer. STC 26A2
+  prepared as DRAFT with boxes 1/4/5 GBP94,500 / GBP47,670 / GBP46,830.
+  STC 26A3 and CAL 27A1 drafts loaded. No MTD submission was made.
+- Bank GBP1: book GBP384,281; outstanding receipts GBP937,796 and payments
+  GBP553,515; statement GBP68,973.44; bridged GBP453,254.44 and unexplained
+  minus GBP68,973.44 (`150`). The bridge arithmetic is correct. This remains an
+  unreconciled fixture, not a confirmed arithmetic defect.
+- Period seven: two of six checklist steps done, two blocking and readiness
+  BLOCKED (`151`). The period was not closed.
+
+### Final control reconciliation and remaining blockers
+
+After all GUI postings, CLI RECONCTL ran with explicit QA-only SQL/ODBC settings,
+CO=STC/CAL, ASAT=20261031, MODE=COMMIT and USER=FINCTRL. The report-launcher path
+was not completed because of the bounded sign-on timeout above. **No demo control
+bridge was rerun, no journal was inserted to balance controls, and no pre-fix
+receipt/order quantities were backfilled.**
+
+| Company / control | Subsidiary GBP | GL GBP | Difference GBP | Outcome |
+|---|---:|---:|---:|---|
+| STC INVENTORY | 1,060,051.85 | 1,061,983.95 | -1,932.10 | GUI-028 open |
+| STC BANK | 376,085.00 | 384,281.00 | -8,196.00 | Saved bank-reconciliation position has not been refreshed after the cash receipt |
+| STC other six families | | | 0.00 each | AGREED |
+| CAL all eight families | | | 0.00 each | Zero differences; WIP/ACCRUAL have no configured control account |
+
+STC returns **4**, not a clean reconciliation. CAL returns **0**; its two
+NO CONTROL rows remain explicit and must not be called configured/AGREED
+accounts. Outputs are `final-reconciliation-STC.txt`,
+`final-reconciliation-CAL.txt` and their named spool reports.
+
+The BANK difference equals the GBP8,196 receipt. RECONCTL uses the latest saved
+fin.BankRecon bridge, currently DEMO-20261031-GBP1 with GBP376,085 and zero saved
+outstandings. The live bank enquiry correctly includes the receipt at GBP384,281
+(`231`). A genuine current statement/outstanding reconciliation is required;
+replacing the subsidiary proof with the GL itself or restating the demo snapshot
+would hide this outstanding workflow rather than verify it.
+
+Not executed: REQGEN preview; GUI inspection disposition; AP invoice capture/
+matching and supplier bank change; full dual-authorised payment/Bacs creation;
+CAL SOC900004 despatch/invoice/serial assertion; conversion preview/commit/restart;
+CREDMGR override and RESTRICT refusal; local MTD submission; MONTHEND operations;
+new promise/dispute commits; mixed inspection/return/standard-cost receipt
+reversal scenarios. Selected paths from all six stories were exercised, not six
+complete end-to-end stories. No production deployment, external payment/tax
+submission or modernisation stage approval occurred.
+
+### Scope closure
+
+After reviewing the final control differences, the user explicitly selected
+**finish this GUI QA pass with the remaining financial blockers documented**.
+This pass therefore closes with **16 repaired and verified findings**
+(GUI-012-027), **one open inventory integration finding** (GUI-028), and the
+separate outstanding bank-reconciliation workflow. No financial-core changes or
+balancing adjustments were made to force those positions to agree.
+
+The owned QA client and bounded helpers were stopped. The isolated database,
+runtime, before/after GUI evidence, test results and control spools are retained.
+Execution provenance is finalised under this runtime's `docs` directory with the
+same run identifier. Completion of the requested QA scope is **not** a clean STC
+financial close, production-readiness certification or lifecycle gate approval.
+
+## Complete six-workflow QA continuation - 12 October 2026
+
+Run `gui-qa-20261012T124201Z-b5145b17` uses the fresh source-deployed database
+`STERP_QA_GUI_20261012_b5145b17` and isolated application runtime
+`run\work\functional-qa-20261012-b5145b17\runtime`. The human explicitly
+approved isolated local builds, tests, postings, jobs and functional bug fixes.
+The run-specific application profile and authorization manifest are retained
+beside that runtime. This is legacy functional QA, not a lifecycle transition.
+The original database, earlier QA databases and shared SQL Agent jobs are not
+changed; no bank, tax authority or other external service is contacted.
+
+The managed Release/x86 build passed. Source deployment excluded production
+database creation and shared jobs. All five demo drivers and both initial
+company reconciliations returned zero. The demo control bridge was used only
+for this initial baseline and will not be rerun after GUI transactions.
+Evidence names below identify native UI Automation JSON and app-only PNGs
+under the runtime's `evidence` directory.
+
+### Newly observed defects before repair
+
+| ID | Confidence | Reproduction / actual result | Expected result | Affected source / retest | State |
+|---|---|---|---|---|---|
+| GUI-029 | observed | WHSE, STC/RDG: F2 selects pick PKS00000001 for SOS900008. Enter `32/10/2026` as Despatch date and click Confirm despatch. The confirmation dialog still opens (`014-despatch-invalid-date-prompt`). `DespatchDate` substitutes the session business date when parsing fails. The operator answered No; no despatch or stock posting was made (`015-invalid-despatch-cancelled`). | Refuse an empty or invalid despatch date before asking for confirmation or calling the posting engine; never silently substitute a different accounting date. | [frmDespatchConfirm.vb](../dotnet/STERP.Desktop/Forms/Sales/frmDespatchConfirm.vb), `DespatchDate`, `OnConfirm`, `BuildArea`. Regression and native retest pending. | Open |
+| GUI-030 | observed | ENGINEER, STC/RDG: Bill Headers (list), Find `BOM-DEMO-B4TC`, Search. The sole draft row is selected but its non-key editors remain disabled. Clicking that row does not enable them; Save reports "Select a record or press New first" (`038-draft-single-result-disabled`, `039-draft-row-click-still-disabled`, `040-draft-single-result-save-refused`). The same filtered-selection failure occurs on released `BK-COMMUTE-M` (`036`, `037`), preventing an actual edit attempt from reaching the immutable-revision control. | A successful search/refresh synchronizes the selected row, edit mode and editors, including a single result and refresh from ADD mode. No results clear previous editor values. Keys/read-only columns stay protected; released content remains protected by the existing database trigger. | [frmGenericMaint.vb](../dotnet/STERP.Desktop/Forms/System/frmGenericMaint.vb), `LoadList`, selection handling. Regression and native retest pending. | Open |
+
+Six complete workflow results and GUI-028 repair evidence will be recorded
+after execution; successful preliminary enquiries are not end-to-end coverage.

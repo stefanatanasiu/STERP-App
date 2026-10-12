@@ -112,6 +112,10 @@ Public Class frmCreditControl
               End Sub)
     End Sub
 
+    Private Sub PromiseClicked(ByVal sender As Object, ByVal e As EventArgs) Handles tsbPromise.Click
+        OnConfirm()
+    End Sub
+
     Private Sub AgedClicked(ByVal sender As Object, ByVal e As EventArgs) Handles tsbAged.Click
         Launch("AGEDDEBT", "Aged debt")
     End Sub

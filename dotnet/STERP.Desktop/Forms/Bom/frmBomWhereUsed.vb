@@ -28,7 +28,7 @@ Public Class frmBomWhereUsed
         _txtAsAt = FilterEdit("&As at:", 80)
         _cboLevels = FilterList("&Levels:", 90, "ALL", "1", "2", "3", "5", "10")
         _chkDraft = FilterList("&Include:", 150, "RELEASED AND DRAFT", "RELEASED ONLY")
-        _txtAsAt.Text = Date.Today.ToString("dd/MM/yyyy")
+        _txtAsAt.Text = Fmt.Date(SterpSession.Current.BusinessDate)
         If FormArgument <> "" Then _txtItem.Text = FormArgument
         AddHandler _cboLevels.SelectedIndexChanged, Sub(s As Object, e As EventArgs) LoadData()
         AddHandler _chkDraft.SelectedIndexChanged, Sub(s As Object, e As EventArgs) LoadData()
@@ -43,6 +43,7 @@ Public Class frmBomWhereUsed
 
     Protected Overrides Sub LoadData()
         If Item() = "" Then
+            Populate(Nothing)
             SetStatus("Enter the component code and press F10 to see every bill that uses it.")
             Return
         End If
@@ -54,12 +55,18 @@ Public Class frmBomWhereUsed
     End Sub
 
     Private Sub FindClicked(ByVal sender As Object, ByVal e As EventArgs)
+        Populate(Nothing)
         If Item() = "" Then
             SetStatus("Enter a component item code first.", "!  WARNING")
             Return
         End If
+        Dim asAt As Date? = Fmt.ParseDate(_txtAsAt.Text)
+        If Not asAt.HasValue Then
+            SetStatus("Enter a valid as-at date in dd/MM/yyyy form.", "!  WARNING")
+            Return
+        End If
         Guard(Sub()
-                  Dim rows As DataTable = _svc.WhereUsed(SterpSession.Current.CompanyCode, Item(), AsAt(),
+                  Dim rows As DataTable = _svc.WhereUsed(SterpSession.Current.CompanyCode, Item(), asAt.Value,
                                                          Levels(), IncludeDraft())
                   Populate(rows)
                   Dim direct As Integer = 0
@@ -103,12 +110,6 @@ Public Class frmBomWhereUsed
 
     Private Function IncludeDraft() As Boolean
         Return Convert.ToString(_chkDraft.SelectedItem) <> "RELEASED ONLY"
-    End Function
-
-    Private Function AsAt() As Date
-        Dim d As Date
-        If Not Date.TryParse(_txtAsAt.Text.Trim(), d) Then d = Date.Today
-        Return d
     End Function
 
 End Class

@@ -72,11 +72,12 @@ Public Class frmInvoiceRegister
         End If
         Dim supplier As String = Fmt.Str(GridHelper.Selected(Grid, "SupplierCode"))
         Dim docRef As String = Fmt.Str(GridHelper.Selected(Grid, "SupplierDocRef"))
+        Dim docType As String = Fmt.Str(GridHelper.Selected(Grid, "DocumentType"))
         Dim gross As Decimal = Fmt.Dec(GridHelper.Selected(Grid, "StatedGross"))
         Dim raw As Object = GridHelper.Selected(Grid, "DocumentDate")
         Dim docDate As Date = If(raw Is Nothing OrElse IsDBNull(raw), SterpSession.Current.BusinessDate, Convert.ToDateTime(raw))
         Guard(Sub()
-                  Dim r As CobolResult = _svc.DuplicateCheck(supplier, docRef, gross, docDate)
+                  Dim r As CobolResult = _svc.DuplicateCheck(supplier, docRef, gross, docDate, docType)
                   If _svc.DuplicateFound Then
                       ShowWarning("This document is already registered as " & _svc.DuplicateRegister &
                                   ". Registering it again would pay the supplier twice.", r.ReasonCode)

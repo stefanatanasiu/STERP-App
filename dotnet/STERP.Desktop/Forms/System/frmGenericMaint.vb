@@ -104,6 +104,8 @@ Partial Public Class frmGenericMaint
     Private Sub LoadList()
         Guard(Sub()
                   Dim t As DataTable = _svc.List(FormArgument, txtSearch.Text.Trim())
+                  _mode = ""
+                  SetEditEnabled(False)
                   GridHelper.Bind(grdList, t)
                   For Each c As DataRow In _svc.Columns.Rows
                       GridHelper.Decorate(grdList, Convert.ToString(c("ColumnName")),
@@ -116,16 +118,22 @@ Partial Public Class frmGenericMaint
                       End If
                   Next
                   GridHelper.FillWidth(grdList)
-                  _mode = ""
-                  SetEditEnabled(False)
+                  grdList_SelectionChanged(grdList, EventArgs.Empty)
                   SetStatus(t.Rows.Count & " record(s).", "")
               End Sub)
     End Sub
 
     Private Sub grdList_SelectionChanged(ByVal sender As Object, ByVal e As EventArgs) Handles grdList.SelectionChanged
         If _mode = "ADD" Then Return
-        Dim r As DataRow = GridHelper.SelectedRow(grdList)
-        If r Is Nothing Then Return
+        Dim r As DataRow = If(grdList.Rows.Count = 0, Nothing, GridHelper.SelectedRow(grdList))
+        If r Is Nothing Then
+            _mode = ""
+            For Each editor As Control In _editors.Values
+                SetValue(editor, Nothing)
+            Next
+            SetEditEnabled(False)
+            Return
+        End If
         For Each kv As KeyValuePair(Of String, Control) In _editors
             If r.Table.Columns.Contains(kv.Key) Then SetValue(kv.Value, r(kv.Key))
         Next

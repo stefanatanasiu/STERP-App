@@ -35,7 +35,7 @@ Public Class frmBomExplosion
         _cboView = FilterList("&View:", 110, "INDENTED", "SINGLE", "LEAF", "COSTED", "NETTED")
         _txtCostSet = FilterEdit("Cost &set:", 90)
         _txtQty.Text = "1"
-        _txtAsAt.Text = Date.Today.ToString("dd/MM/yyyy")
+        _txtAsAt.Text = Fmt.Date(SterpSession.Current.BusinessDate)
         _txtCostSet.Text = "BOMDEMO"
         If FormArgument <> "" AndAlso FormArgument <> "COMPARE" Then _txtItem.Text = FormArgument
         If FormArgument = "COMPARE" Then
@@ -55,6 +55,7 @@ Public Class frmBomExplosion
 
     Protected Overrides Sub LoadData()
         If Item() = "" Then
+            Populate(Nothing)
             SetStatus("Enter a parent item, a quantity and a date, then press F10 to explode.")
             Return
         End If
@@ -67,24 +68,33 @@ Public Class frmBomExplosion
 
     ''' <summary>The engine owns the calculation; the view only decides which reading is shown.</summary>
     Private Sub ExplodeClicked(ByVal sender As Object, ByVal e As EventArgs)
+        Populate(Nothing)
         If Item() = "" Then
             SetStatus("Enter a parent item code first.", "!  WARNING")
             Return
         End If
+        Dim quantity As Decimal
+        If Not Decimal.TryParse(_txtQty.Text.Trim(), Globalization.NumberStyles.Number, Fmt.UK, quantity) OrElse
+           quantity <= 0D Then
+            SetStatus("Enter a positive numeric quantity before exploding the bill.", "!  WARNING")
+            Return
+        End If
+        Dim asAt As Date
+        If Not TryAsAt(asAt) Then Return
         Guard(Sub()
                   Dim rows As DataTable = Nothing
                   Dim view As String = Convert.ToString(_cboView.SelectedItem)
                   Dim r As CobolResult
                   Select Case view
                       Case "NETTED"
-                          r = _svc.NettedPlan(Item(), Qty(), AsAt(), rows)
+                          r = _svc.NettedPlan(Item(), quantity, asAt, rows)
                       Case "COSTED"
-                          r = _svc.CostedExplosion(Item(), Rev(), Qty(), AsAt(), _txtCostSet.Text.Trim().ToUpperInvariant(), rows)
+                          r = _svc.CostedExplosion(Item(), Rev(), quantity, asAt, _txtCostSet.Text.Trim().ToUpperInvariant(), rows)
                       Case Else
-                          r = _svc.Explode(Item(), Rev(), Qty(), AsAt(), view, 0, rows)
+                          r = _svc.Explode(Item(), Rev(), quantity, asAt, view, 0, rows)
                   End Select
-                  If rows IsNot Nothing Then Populate(rows)
                   If Not ShowResult(r) Then Return
+                  If rows IsNot Nothing Then Populate(rows)
                   Report(view)
               End Sub)
     End Sub
@@ -113,24 +123,30 @@ Public Class frmBomExplosion
     Private Sub WhereUsedClicked(ByVal sender As Object, ByVal e As EventArgs)
         Dim code As String = Fmt.Str(GridHelper.Selected(Grid, "Item"))
         If code = "" Then code = Item()
+        Populate(Nothing)
         If code = "" Then
             SetStatus("Select a component row, or enter a parent item.", "!  WARNING")
             Return
         End If
+        Dim asAt As Date
+        If Not TryAsAt(asAt) Then Return
         Guard(Sub()
-                  Populate(_svc.WhereUsed(SterpSession.Current.CompanyCode, code, AsAt(), 25, True))
-                  SetStatus("Where used for " & code & " as at " & AsAt().ToString("dd/MM/yyyy") & ".", "OK")
+                  Populate(_svc.WhereUsed(SterpSession.Current.CompanyCode, code, asAt, 25, True))
+                  SetStatus("Where used for " & code & " as at " & Fmt.Date(asAt) & ".", "OK")
               End Sub)
     End Sub
 
     ''' <summary>Two revisions of the same bill: added, removed and changed, with the cost impact.</summary>
     Private Sub CompareClicked(ByVal sender As Object, ByVal e As EventArgs)
+        Populate(Nothing)
         If Item() = "" Then
             SetStatus("Enter the bill reference in the parent item field to compare revisions.", "!  WARNING")
             Return
         End If
+        Dim asAt As Date
+        If Not TryAsAt(asAt) Then Return
         Guard(Sub()
-                  Dim revs As DataTable = _svc.Revisions("", Item(), AsAt())
+                  Dim revs As DataTable = _svc.Revisions("", Item(), asAt)
                   Dim bomRef As String = Item()
                   If revs IsNot Nothing AndAlso revs.Rows.Count > 0 Then bomRef = Fmt.Str(revs.Rows(0)("BomRef"))
                   Dim fromRev As String = ""
@@ -157,16 +173,14 @@ Public Class frmBomExplosion
         Return _txtRev.Text.Trim().ToUpperInvariant()
     End Function
 
-    Private Function Qty() As Decimal
-        Dim q As Decimal
-        If Not Decimal.TryParse(_txtQty.Text.Trim(), q) OrElse q <= 0D Then q = 1D
-        Return q
-    End Function
-
-    Private Function AsAt() As Date
-        Dim d As Date
-        If Not Date.TryParse(_txtAsAt.Text.Trim(), d) Then d = Date.Today
-        Return d
+    Private Function TryAsAt(ByRef value As Date) As Boolean
+        Dim parsed As Date? = Fmt.ParseDate(_txtAsAt.Text)
+        If Not parsed.HasValue Then
+            SetStatus("Enter a valid as-at date in dd/MM/yyyy form.", "!  WARNING")
+            Return False
+        End If
+        value = parsed.Value
+        Return True
     End Function
 
 End Class

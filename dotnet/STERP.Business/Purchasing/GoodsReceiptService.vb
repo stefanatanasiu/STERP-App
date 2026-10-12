@@ -22,6 +22,7 @@ Public Class GoodsReceiptService
     Private Const OutstandingLines As String =
         "SELECT TOP 20 l.LineNum, l.ItemCode, ISNULL(l.Revision,'') AS Revision, " &
         "ISNULL(l.Description,'') AS Description, l.OrderedQty, l.CancelledQty, l.ReceivedQty, " &
+        "o.SupplierCode, o.CurrencyCode, o.FxRate, ISNULL(o.IncotermsRule,'') AS IncotermsRule, " &
         "l.UomCode, l.ConversionFactor, l.UnitPrice, " &
         "ISNULL(l.OverDeliveryTolerancePct,0) AS OverDeliveryTolerancePct, " &
         "ScheduleNo = ISNULL((SELECT TOP 1 s.ScheduleNo FROM po.PurchaseSchedule s " &
@@ -38,6 +39,7 @@ Public Class GoodsReceiptService
         "AND loc.SiteCode = @s AND loc.IsActive = 1 AND loc.LocationType IN ('GOODSIN','STOCK') " &
         "ORDER BY CASE WHEN loc.LocationType = 'GOODSIN' THEN 0 ELSE 1 END, loc.LocationCode), '') " &
         "FROM po.PurchaseOrderLine l " &
+        "JOIN po.PurchaseOrder o ON o.PurchaseOrderId = l.PurchaseOrderId AND o.SiteCode = @s " &
         "LEFT JOIN inv.Item i ON i.CompanyCode = l.CompanyCode AND i.ItemCode = l.ItemCode " &
         "WHERE l.CompanyCode = @c AND l.OrderNumber = @o AND l.Status NOT IN ('CANCELLED','SHORTCLOSED') " &
         "AND l.OrderedQty - l.CancelledQty - l.ReceivedQty > 0 ORDER BY l.LineNum"
@@ -56,6 +58,22 @@ Public Class GoodsReceiptService
 
     ''' <summary>Pulls the outstanding lines of an order into the COMMAREA (PO-009, PO-014).</summary>
     Public Function Validate(ByVal v As Dictionary(Of String, String)) As CobolResult
+        _area = Nothing
+        ReceiptRef = ""
+        Status = ""
+        TotalGBP = 0D
+        GrniGBP = 0D
+        PpvGBP = 0D
+        JournalNumber = ""
+        LinesAccepted = 0
+        LinesHeld = 0
+        LinesQuarantined = 0
+        WasDuplicate = False
+        Dim ownership As String = PoMap.S(v, "OWNERSHIP")
+        If ownership = "" Then ownership = "RECEIPT"
+        If ownership <> "RECEIPT" AndAlso ownership <> "INCOTERMS" AndAlso ownership <> "DROPSHIP" Then
+            Throw New ArgumentException("Ownership must be RECEIPT, INCOTERMS or DROPSHIP.", NameOf(v))
+        End If
         Dim ca As CommArea = NewArea("RECEIPTCA")
         ca.SetString("RC-ORDER-NUMBER", PoMap.S(v, "ORDER"))
         ca.SetString("RC-SUPPLIER", PoMap.S(v, "SUPPLIER"))
@@ -63,7 +81,7 @@ Public Class GoodsReceiptService
         ca.SetDate("RC-PHYSICAL-DATE", PoMap.Dt(v, "PHYSDATE", Session.BusinessDate))
         ca.SetDate("RC-POSTING-DATE", PoMap.Dt(v, "POSTDATE", Session.BusinessDate))
         ca.SetString("RC-WAREHOUSE", PoMap.S(v, "WHS"))
-        ca.SetString("RC-OWNERSHIP", PoMap.S(v, "OWNERSHIP"))
+        ca.SetString("RC-OWNERSHIP", ownership)
         ca.SetString("RC-INCOTERM", PoMap.S(v, "INCO"))
         ca.SetString("RC-SHIP-EVIDENCE", PoMap.T(v, "EVIDENCE"))
         ca.SetString("RC-IMPORT-ENTRY", PoMap.S(v, "IMPORTENTRY"))
@@ -87,6 +105,12 @@ Public Class GoodsReceiptService
         Dim t As DataTable = Query(OutstandingLines, "@c", Company, "@o", PoMap.S(v, "ORDER"), "@s", Site)
         Dim n As Integer = Math.Min(t.Rows.Count, 20)
         ca.SetInt("RC-LINE-CNT", n)
+        If n > 0 Then
+            ca.SetString("RC-SUPPLIER", Fmt.Str(t.Rows(0)("SupplierCode")))
+            ca.SetString("RC-CURRENCY", Fmt.Str(t.Rows(0)("CurrencyCode")))
+            ca.SetDecimal("RC-FX-RATE", Fmt.Dec(t.Rows(0)("FxRate")))
+            ca.SetString("RC-INCOTERM", Fmt.Str(t.Rows(0)("IncotermsRule")))
+        End If
         For i As Integer = 0 To n - 1
             Dim row As DataRow = t.Rows(i)
             Dim j As String = "(" & (i + 1) & ")"
@@ -134,7 +158,10 @@ Public Class GoodsReceiptService
     ''' </summary>
     Public Sub Count(ByVal index As Integer, ByVal counted As Decimal, ByVal location As String,
                      ByVal lot As String, ByVal serial As String)
-        If _area Is Nothing Then Return
+        If _area Is Nothing Then Throw New InvalidOperationException("Validate a delivery before counting its lines.")
+        If index < 1 OrElse index > _area.GetInt("RC-LINE-CNT") Then
+            Throw New ArgumentOutOfRangeException(NameOf(index), "Select a loaded delivery line.")
+        End If
         Dim i As String = "(" & index & ")"
         _area.SetDecimal("RC-L-RECEIVED" & i, counted)
         If location <> "" Then _area.SetString("RC-L-LOCATION" & i, location)
@@ -160,10 +187,50 @@ Public Class GoodsReceiptService
     ''' <summary>Reversal of a posted receipt with its reason (PO-009).</summary>
     Public Function Reverse(ByVal receiptRef As String, ByVal reason As String) As CobolResult
         Dim ca As CommArea = NewArea("RECEIPTCA")
+        Dim lines As DataTable = Query(
+            "SELECT r.SupplierCode, r.PurchaseOrderNumber, r.WarehouseCode, r.OwnershipBasis, " &
+            "l.LineNum, l.PurchaseOrderLine, l.ScheduleNo, l.ItemCode, l.Revision, l.ReceivedQty, " &
+            "l.StockQty, l.AcceptedQty, l.QuarantineQty, l.UomCode, l.ConversionFactor, " &
+            "l.LocationCode, l.LotCode, l.SerialNo, l.UnitPrice, l.MovementId " &
+            "FROM po.Receipt r JOIN po.ReceiptLine l ON l.ReceiptId = r.ReceiptId " &
+            "WHERE r.CompanyCode = @c AND r.SiteCode = @s AND r.ReceiptRef = @r " &
+            "AND r.Status = 'CONFIRMED' ORDER BY l.LineNum",
+            "@c", Company, "@s", Site, "@r", receiptRef)
+        If lines.Rows.Count > 20 Then
+            Throw New InvalidOperationException("The receipt exceeds the engine's 20-line reversal limit.")
+        End If
+        ca.SetString("RC-RECEIPT-REF", receiptRef)
         ca.SetString("RC-REVERSE-REF", receiptRef)
         ca.SetString("RC-REVERSE-REASON", reason)
         ca.SetString("RC-RECEIVED-BY", User)
         ca.SetDate("RC-POSTING-DATE", Session.BusinessDate)
+        ca.SetInt("RC-LINE-CNT", lines.Rows.Count)
+        If lines.Rows.Count > 0 Then
+            ca.SetString("RC-SUPPLIER", Fmt.Str(lines.Rows(0)("SupplierCode")))
+            ca.SetString("RC-ORDER-NUMBER", Fmt.Str(lines.Rows(0)("PurchaseOrderNumber")))
+            ca.SetString("RC-WAREHOUSE", Fmt.Str(lines.Rows(0)("WarehouseCode")))
+            ca.SetString("RC-OWNERSHIP", Fmt.Str(lines.Rows(0)("OwnershipBasis")))
+        End If
+        For i As Integer = 0 To lines.Rows.Count - 1
+            Dim row As DataRow = lines.Rows(i)
+            Dim j As String = "(" & (i + 1) & ")"
+            ca.SetInt("RC-L-NUM" & j, Fmt.Int(row("LineNum")))
+            ca.SetInt("RC-L-PO-LINE" & j, Fmt.Int(row("PurchaseOrderLine")))
+            ca.SetInt("RC-L-SCHEDULE" & j, Fmt.Int(row("ScheduleNo")))
+            For Each field As String() In New String()() {
+                New String() {"ITEM", "ItemCode"}, New String() {"REVISION", "Revision"},
+                New String() {"UOM", "UomCode"}, New String() {"LOCATION", "LocationCode"},
+                New String() {"LOT", "LotCode"}, New String() {"SERIAL", "SerialNo"}}
+                ca.SetString("RC-L-" & field(0) & j, Fmt.Str(row(field(1))))
+            Next
+            For Each field As String() In New String()() {
+                New String() {"RECEIVED", "ReceivedQty"}, New String() {"STOCK-QTY", "StockQty"},
+                New String() {"ACCEPTED", "AcceptedQty"}, New String() {"QUARANT", "QuarantineQty"},
+                New String() {"FACTOR", "ConversionFactor"}, New String() {"PRICE", "UnitPrice"}}
+                ca.SetDecimal("RC-L-" & field(0) & j, Fmt.Dec(row(field(1))))
+            Next
+            ca.SetString("RC-L-STOCKED" & j, If(Fmt.Int(row("MovementId")) > 0, "Y", "N"))
+        Next
         Dim r As CobolResult = Link("RECEIPT", ca, "REVERSE", Session.NewCorrelationId())
         _area = ca
         Read(ca)

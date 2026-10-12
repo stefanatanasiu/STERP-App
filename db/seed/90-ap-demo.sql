@@ -58,7 +58,7 @@ INSERT ap.PurchaseInvoice (CompanyCode, DocumentType, RegisterNumber, SupplierCo
         NonRecoverableVatGBP, VatEvidenceValid, VatEvidenceNote, TermsCode, TermsSnapshot, RegistrationState, MatchState,
         AccountingState, PaymentEligibility, SettlementState, BlockReason, OwnerUser, ApprovedBy, ApprovedAt, IsNonPo,
         NonPoReason, CreatedBy)
-SELECT i.Co, i.DocType, i.Reg, i.Supp, i.DocRef, UPPER(REPLACE(REPLACE(i.DocRef, ' ', ''), '-', '')),
+SELECT i.Co, i.DocType, i.Reg, i.Supp, i.DocRef, ap.fn_NormaliseInvoiceRef(i.DocRef),
        DATEADD(day, i.DocOff + 2, @t), DATEADD(day, i.DocOff, @t), DATEADD(day, i.DocOff, @t),
        DATEADD(day, i.DocOff + 2, @t), DATEADD(day, i.DueOff, @t), p.FiscalYear, p.PeriodNo,
        CONVERT(varchar(7), DATEADD(day, i.DocOff, @t), 126), i.Ccy, i.Fx, DATEADD(day, i.DocOff, @t),
@@ -76,6 +76,11 @@ SELECT i.Co, i.DocType, i.Reg, i.Supp, i.DocRef, UPPER(REPLACE(REPLACE(i.DocRef,
                 WHERE x.CompanyCode = i.Co AND DATEADD(day, i.DocOff + 2, @t) BETWEEN x.StartDate AND x.EndDate) p
  WHERE EXISTS (SELECT 1 FROM ap.Supplier s WHERE s.CompanyCode = i.Co AND s.SupplierCode = i.Supp)
    AND NOT EXISTS (SELECT 1 FROM ap.PurchaseInvoice v WHERE v.CompanyCode = i.Co AND v.RegisterNumber = i.Reg);
+
+UPDATE ap.PurchaseInvoice
+   SET SupplierDocRefNormalised = ap.fn_NormaliseInvoiceRef(SupplierDocRef)
+ WHERE CreatedBy = 'DEMO'
+   AND SupplierDocRefNormalised <> ap.fn_NormaliseInvoiceRef(SupplierDocRef);
 
 INSERT ap.PurchaseInvoiceLine (PurchaseInvoiceId, LineNum, Description, PurchaseOrderNumber, PurchaseOrderLine, ReceiptRef,
         ReceiptLine, Quantity, UomCode, UnitPrice, PricePerQty, NetAmount, VatCode, VatRatePct, VatAmount, NetAmountGBP,

@@ -50,6 +50,32 @@ Public Class PaymentService
     Public Function Totals(ByVal proposalRef As String) As CobolResult
         Dim ca As CommArea = NewArea("APPAYPRPCA")
         ca.SetString("PP-PROPOSAL-REF", proposalRef)
+        Dim row As DataRow = QueryRow(
+            "SELECT p.ProposalId, p.Status, p.CashPrincipalGBP, p.CreditsAppliedGBP, p.TotalOutflowGBP, " &
+            "p.ExcludedCount, p.ContentHash, SelectedCount = (SELECT COUNT(*) FROM ap.PaymentProposalLine l " &
+            "WHERE l.ProposalId = p.ProposalId AND l.IsExcluded = 0) FROM ap.PaymentProposal p " &
+            "WHERE p.CompanyCode = @c AND p.ProposalRef = @r",
+            "@c", Company, "@r", proposalRef)
+        If row Is Nothing Then
+            TotalOutflow = 0D
+            CashPrincipal = 0D
+            CreditsApplied = 0D
+            SelectedCount = 0
+            ExcludedCount = 0
+            ProposalStatus = ""
+            ContentHash = ""
+            Note = "The payment proposal is not held for this company."
+            Return New CobolResult With {
+                .Program = "APPAYPRP", .ReturnCode = 8, .ReasonCode = "APP0000", .Message = Note}
+        End If
+        ca.SetInt("PP-PROPOSAL-ID", Fmt.Int(row("ProposalId")))
+        ca.SetString("PP-STATUS", Fmt.Str(row("Status")))
+        ca.SetString("PP-CONTENT-HASH", Fmt.Str(row("ContentHash")))
+        ca.SetDecimal("PP-CASH-PRINCIPAL", Fmt.Dec(row("CashPrincipalGBP")))
+        ca.SetDecimal("PP-CREDITS-APPLIED", Fmt.Dec(row("CreditsAppliedGBP")))
+        ca.SetDecimal("PP-TOTAL-OUTFLOW", Fmt.Dec(row("TotalOutflowGBP")))
+        ca.SetInt("PP-SELECTED-CNT", Fmt.Int(row("SelectedCount")))
+        ca.SetInt("PP-EXCLUDED-CNT", Fmt.Int(row("ExcludedCount")))
         Dim r As CobolResult = Link("APPAYPRP", ca, "TOTALS")
         ReadProposal(ca)
         Return r

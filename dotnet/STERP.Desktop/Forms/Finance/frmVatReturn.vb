@@ -21,6 +21,7 @@ Public Class frmVatReturn
     Private _txtPeriod As TextBox
     Private _cboBasis As ComboBox
     Private _grid As DataGridView
+    Private _selectedBox As Integer
 
     Public Sub New()
         Me.Text = "VAT Return - Nine Boxes"
@@ -43,6 +44,8 @@ Public Class frmVatReturn
             _box(i).ReadOnly = True
             _box(i).TextAlign = HorizontalAlignment.Right
             _box(i).BackColor = UiStyle.Face
+            Dim boxNo As Integer = i + 1
+            AddHandler _box(i).Enter, Sub(sender As Object, e As EventArgs) _selectedBox = boxNo
         Next
         _grid = New DataGridView()
         _grid.SetBounds(8, 180, 814, 310)
@@ -87,6 +90,7 @@ Public Class frmVatReturn
             Return
         End If
         Guard(Sub()
+                  _selectedBox = 0
                   Dim r As CobolResult = _svc.Prepare(PeriodKey(), Convert.ToString(_cboBasis.SelectedItem))
                   For i As Integer = 1 To 9
                       _box(i - 1).Text = Fmt.Money(_svc.BoxValue(i))
@@ -108,10 +112,7 @@ Public Class frmVatReturn
 
     ''' <summary>Every box total drills back to the source documents behind it (FIN-026).</summary>
     Private Sub DrillClicked(ByVal sender As Object, ByVal e As EventArgs)
-        Dim boxNo As Integer = 0
-        For i As Integer = 0 To 8
-            If Me.ActiveControl Is _box(i) Then boxNo = i + 1
-        Next
+        Dim boxNo As Integer = _selectedBox
         If boxNo = 0 Then
             SetStatus("Put the cursor in the box to drill into, then press Drill down.", "!  WARNING")
             Return

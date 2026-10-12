@@ -118,6 +118,7 @@
        1000-INIT SECTION.
        1000-START.
            MOVE "N" TO WS-FATAL-SW
+           MOVE "N" TO WS-DB-SW
            MOVE "N" TO WS-HELD-SW
            MOVE "RECEIPT" TO CA-PROGRAM
            MOVE 0 TO CA-RETURN-CODE
@@ -327,6 +328,9 @@
                PERFORM 2100-ONE-LINE THRU 2100-EXIT
            END-PERFORM
            MOVE WS-OK-LINES TO RC-LINES-ACCEPTED
+           IF CA-RETURN-CODE >= 8
+               GO TO 2000-EXIT
+           END-IF
            IF WS-HELD
                MOVE 6 TO CA-RETURN-CODE
                MOVE "RCP0006" TO CA-REASON-CODE
@@ -367,7 +371,12 @@
            IF RC-L-RECEIVED(WS-I) <= 0
                MOVE "REJECT" TO RC-L-OUTCOME(WS-I)
                MOVE "RCP0003" TO RC-L-REASON(WS-I)
+               MOVE "RCP0003" TO CA-REASON-CODE
                MOVE 8 TO CA-RETURN-CODE
+               MOVE SPACES TO CA-MESSAGE
+               STRING "Item " FUNCTION TRIM(RC-L-ITEM(WS-I))
+                      " must carry a positive receivable quantity"
+                   DELIMITED BY SIZE INTO CA-MESSAGE
                GO TO 2100-EXIT
            END-IF
            COMPUTE RC-L-STOCK-QTY(WS-I) ROUNDED =
@@ -375,6 +384,7 @@
            IF RC-L-TRACE-LOT(WS-I) AND RC-L-LOT(WS-I) = SPACES
                MOVE "REJECT" TO RC-L-OUTCOME(WS-I)
                MOVE "RCP0004" TO RC-L-REASON(WS-I)
+               MOVE "RCP0004" TO CA-REASON-CODE
                MOVE 8 TO CA-RETURN-CODE
                MOVE SPACES TO CA-MESSAGE
                STRING "Item " FUNCTION TRIM(RC-L-ITEM(WS-I))
@@ -387,12 +397,19 @@
            IF RC-L-TRACE-SERIAL(WS-I) AND RC-L-SERIAL(WS-I) = SPACES
                MOVE "REJECT" TO RC-L-OUTCOME(WS-I)
                MOVE "RCP0004" TO RC-L-REASON(WS-I)
+               MOVE "RCP0004" TO CA-REASON-CODE
                MOVE 8 TO CA-RETURN-CODE
+               MOVE SPACES TO CA-MESSAGE
+               STRING "Item " FUNCTION TRIM(RC-L-ITEM(WS-I))
+                      " is serial traceable; a serial number must "
+                      "be recorded at goods inward"
+                   DELIMITED BY SIZE INTO CA-MESSAGE
                GO TO 2100-EXIT
            END-IF
            IF RC-L-TRACE-SERIAL(WS-I) AND RC-L-STOCK-QTY(WS-I) NOT = 1
                MOVE "REJECT" TO RC-L-OUTCOME(WS-I)
                MOVE "RCP0004" TO RC-L-REASON(WS-I)
+               MOVE "RCP0004" TO CA-REASON-CODE
                MOVE 8 TO CA-RETURN-CODE
                MOVE SPACES TO CA-MESSAGE
                STRING "A serial traceable receipt line carries "
@@ -405,6 +422,7 @@
               AND NOT RC-OWN-DROPSHIP AND RC-OWNERSHIP NOT = "INCOTERMS"
                MOVE "REJECT" TO RC-L-OUTCOME(WS-I)
                MOVE "RCP0005" TO RC-L-REASON(WS-I)
+               MOVE "RCP0005" TO CA-REASON-CODE
                MOVE 8 TO CA-RETURN-CODE
                MOVE SPACES TO CA-MESSAGE
                STRING "A stocked receipt must say where the goods "
@@ -507,8 +525,10 @@
            MOVE RC-TOTAL-GBP TO RC-GRNI-GBP
            PERFORM 3500-POST-GRNI THRU 3500-EXIT
            IF NOT CA-FAILED
-               MOVE "CONFIRMED" TO RC-STATUS
                PERFORM 3600-STAMP THRU 3600-EXIT
+               IF NOT CA-FAILED
+                   MOVE "CONFIRMED" TO RC-STATUS
+               END-IF
            END-IF.
        3000-EXIT.
            EXIT.
@@ -797,25 +817,21 @@
        3600-STAMP SECTION.
        3600-START.
            MOVE SPACES TO SQLIO-STMT
-           STRING "UPDATE po.Receipt SET Status = 'CONFIRMED', "
-                  "GrniValueGBP = ?, JournalId = (SELECT TOP 1 "
-                  "JournalId FROM fin.Journal WHERE CompanyCode = ? "
-                  "AND CorrelationId = ?), ModifiedBy = ?, "
-                  "ModifiedAt = SYSDATETIME() WHERE ReceiptId = ?"
+           STRING "EXEC po.usp_ReceiptDeliveryState ?, ?, ?, "
+                  "'CONFIRMED', ?, ?, ?"
                DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE CA-COMPANY TO SQLIO-PARM-VAL(1)
+           MOVE CA-SITE TO SQLIO-PARM-VAL(2)
+           MOVE RC-RECEIPT-REF TO SQLIO-PARM-VAL(3)
            MOVE RC-GRNI-GBP TO SQLIO-NUM-EDIT
-           MOVE FUNCTION TRIM(SQLIO-NUM-EDIT) TO SQLIO-PARM-VAL(1)
-           MOVE CA-COMPANY TO SQLIO-PARM-VAL(2)
-           MOVE WS-POST-CORR TO SQLIO-PARM-VAL(3)
-           MOVE CA-USER TO SQLIO-PARM-VAL(4)
-           MOVE RC-RECEIPT-ID TO SQLIO-INT-EDIT
-           MOVE FUNCTION TRIM(SQLIO-INT-EDIT) TO SQLIO-PARM-VAL(5)
-           MOVE 5 TO SQLIO-PARM-CNT
+           MOVE FUNCTION TRIM(SQLIO-NUM-EDIT) TO SQLIO-PARM-VAL(4)
+           MOVE WS-POST-CORR TO SQLIO-PARM-VAL(5)
+           MOVE CA-USER TO SQLIO-PARM-VAL(6)
+           MOVE 6 TO SQLIO-PARM-CNT
            MOVE 3 TO SQLIO-CURSOR
            MOVE "EXEC" TO SQLIO-FUNC
            CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
-           MOVE "CLOS" TO SQLIO-FUNC
-           CALL "SQLIO" USING SQLIO-CA WS-ONE-COL.
+           PERFORM 8200-CHECK-WRITE THRU 8200-EXIT.
        3600-EXIT.
            EXIT.
       *>----------------------------------------------------------------
@@ -903,11 +919,13 @@
            STRING "SELECT CAST(ReceiptId AS varchar(30)), "
                   "CAST(GrniValueGBP AS varchar(30)) FROM "
                   "po.Receipt WHERE CompanyCode = ? AND "
-                  "ReceiptRef = ? AND Status = 'CONFIRMED'"
+                  "ReceiptRef = ? AND SiteCode = ? "
+                  "AND Status = 'CONFIRMED'"
                DELIMITED BY SIZE INTO SQLIO-STMT
            MOVE CA-COMPANY TO SQLIO-PARM-VAL(1)
            MOVE RC-REVERSE-REF TO SQLIO-PARM-VAL(2)
-           MOVE 2 TO SQLIO-PARM-CNT
+           MOVE CA-SITE TO SQLIO-PARM-VAL(3)
+           MOVE 3 TO SQLIO-PARM-CNT
            MOVE 2 TO SQLIO-COL-CNT
            MOVE 30 TO SQLIO-COL-WIDTH(1)
            MOVE 30 TO SQLIO-COL-WIDTH(2)
@@ -928,20 +946,21 @@
            PERFORM 5400-REV-POST THRU 5400-EXIT
            IF NOT CA-FAILED
                MOVE SPACES TO SQLIO-STMT
-               STRING "UPDATE po.Receipt SET Status = 'REVERSED', "
-                      "ModifiedBy = ?, ModifiedAt = SYSDATETIME() "
-                      "WHERE CompanyCode = ? AND ReceiptRef = ?"
+               STRING "EXEC po.usp_ReceiptDeliveryState ?, ?, ?, "
+                      "'REVERSED', 0, NULL, ?"
                    DELIMITED BY SIZE INTO SQLIO-STMT
-               MOVE CA-USER TO SQLIO-PARM-VAL(1)
-               MOVE CA-COMPANY TO SQLIO-PARM-VAL(2)
+               MOVE CA-COMPANY TO SQLIO-PARM-VAL(1)
+               MOVE CA-SITE TO SQLIO-PARM-VAL(2)
                MOVE RC-REVERSE-REF TO SQLIO-PARM-VAL(3)
-               MOVE 3 TO SQLIO-PARM-CNT
+               MOVE CA-USER TO SQLIO-PARM-VAL(4)
+               MOVE 4 TO SQLIO-PARM-CNT
                MOVE 3 TO SQLIO-CURSOR
                MOVE "EXEC" TO SQLIO-FUNC
                CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
-               MOVE "CLOS" TO SQLIO-FUNC
-               CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
-               MOVE "REVERSED" TO RC-STATUS
+               PERFORM 8200-CHECK-WRITE THRU 8200-EXIT
+               IF NOT CA-FAILED
+                   MOVE "REVERSED" TO RC-STATUS
+               END-IF
            END-IF.
        5000-EXIT.
            EXIT.
@@ -950,7 +969,9 @@
        5200-START.
            PERFORM VARYING WS-I FROM 1 BY 1
                    UNTIL WS-I > RC-LINE-CNT
-               IF RC-L-RECEIVED(WS-I) > 0
+               IF RC-L-STOCK-QTY(WS-I) > 0
+                  AND RC-L-STOCKED(WS-I) = "Y"
+                  AND NOT RC-OWN-DROPSHIP
                    INITIALIZE WS-STKMOVE-CA
                    MOVE "ISSUE" TO SK-FUNCTION
                    MOVE CA-COMPANY TO SK-COMPANY
@@ -964,6 +985,10 @@
                    MOVE RC-L-LOT(WS-I) TO SM-LOT-CODE
                    MOVE RC-L-SERIAL(WS-I) TO SM-SERIAL-NO
                    MOVE RC-L-RECEIVED(WS-I) TO SM-QUANTITY
+                   MOVE RC-L-REVISION(WS-I) TO SM-REVISION
+                   IF RC-L-QUARANT(WS-I) > 0
+                       MOVE "QUARANTINE" TO SM-CONDITION
+                   END-IF
                    MOVE RC-L-UOM(WS-I) TO SM-UOM-CODE
                    MOVE RC-L-PRICE(WS-I) TO SM-UNIT-COST
                    MOVE CA-BUSINESS-DATE TO SM-MOVEMENT-DATE
@@ -1045,6 +1070,20 @@
                END-IF
            END-PERFORM.
        8100-EXIT.
+           EXIT.
+      *>----------------------------------------------------------------
+       8200-CHECK-WRITE SECTION.
+       8200-START.
+           MOVE SQLIO-SQLCODE TO WS-LINE-SQLCODE
+           MOVE SQLIO-ERRMSG TO WS-LINE-ERRMSG
+           MOVE "CLOS" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+           IF WS-LINE-SQLCODE NOT = 0
+               MOVE "RCP0010" TO CA-REASON-CODE
+               MOVE WS-LINE-ERRMSG TO CA-MESSAGE
+               PERFORM 9000-REJECT THRU 9000-EXIT
+           END-IF.
+       8200-EXIT.
            EXIT.
       *>----------------------------------------------------------------
        9000-REJECT SECTION.

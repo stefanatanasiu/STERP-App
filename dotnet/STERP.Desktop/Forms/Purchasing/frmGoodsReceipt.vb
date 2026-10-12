@@ -33,6 +33,7 @@ Public Class frmGoodsReceipt
     Private _cboOwner As ComboBox
     Private _cboDisp As ComboBox
     Private _grid As DataGridView
+    Private _loadedHeader As Dictionary(Of String, String)
 
     Public Sub New()
         Me.Text = "Goods Receipt and Inspection"
@@ -45,7 +46,7 @@ Public Class frmGoodsReceipt
         Next
         UiStyle.Caption(Me, "Ownershi&p passes:", 330, 8, 110)
         _cboOwner = UiStyle.Picker(Me, 444, 6, 150)
-        _cboOwner.Items.AddRange(New String() {"ON-RECEIPT", "ON-DESPATCH", "ON-ACCEPTANCE", "CONSIGNMENT", "IN-TRANSIT"})
+        _cboOwner.Items.AddRange(New String() {"RECEIPT", "INCOTERMS", "DROPSHIP"})
         _cboOwner.SelectedIndex = 0
         Dim b1 As Button = UiStyle.Push(Me, "&Validate", 330, 36, 90)
         AddHandler b1.Click, AddressOf ValidateClicked
@@ -53,14 +54,14 @@ Public Class frmGoodsReceipt
         AddHandler b2.Click, AddressOf CountClicked
         Dim b3 As Button = UiStyle.Push(Me, "Re&verse", 522, 36, 90)
         AddHandler b3.Click, AddressOf ReverseClicked
-        UiStyle.Box(Me, "Counted quantity for the selected line", 620, 2, 292, 136)
+        Dim countBox As GroupBox = UiStyle.Box(Me, "Counted quantity for the selected line", 620, 2, 292, 136)
         Dim cy As Integer = 22
         For Each f As String() In _count
             UiStyle.Caption(Me, f(1), 630, cy, 80)
             _edit(f(0)) = UiStyle.Edit(Me, 714, cy, CInt(f(2)))
             cy += 24
         Next
-        UiStyle.Box(Me, "Inspection of a quarantined line", 8, 150, 904, 136)
+        Dim inspectionBox As GroupBox = UiStyle.Box(Me, "Inspection of a quarantined line", 8, 150, 904, 136)
         Dim ix As Integer = 18, iy As Integer = 172
         For Each f As String() In _insp
             UiStyle.Caption(Me, f(1), ix, iy, 92)
@@ -85,6 +86,8 @@ Public Class frmGoodsReceipt
         _grid.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom
         GridHelper.Style(_grid)
         Me.Controls.Add(_grid)
+        countBox.SendToBack()
+        inspectionBox.SendToBack()
     End Sub
 
     Protected Overrides Sub OnLoad(ByVal e As EventArgs)
@@ -110,11 +113,14 @@ Public Class frmGoodsReceipt
 
     ''' <summary>Reads the outstanding order lines into the COMMAREA (PO-009, PO-014, PO-025).</summary>
     Private Sub ValidateClicked(ByVal sender As Object, ByVal e As EventArgs)
+        _loadedHeader = Nothing
+        GridHelper.Bind(_grid, Nothing)
         Guard(Sub()
                   Dim v As Dictionary(Of String, String) = Values()
                   v("OWNERSHIP") = Convert.ToString(_cboOwner.SelectedItem)
                   Dim r As CobolResult = _svc.Validate(v)
                   GridHelper.Bind(_grid, _svc.Lines())
+                  If _grid.Rows.Count > 0 Then _loadedHeader = Header()
                   If Not ShowResult(r) Then Return
                   Dim txt As String = _grid.Rows.Count & " outstanding line(s) on " & v("ORDER")
                   If _svc.WasDuplicate Then txt &= "   *** this delivery note has been received before"
@@ -124,6 +130,7 @@ Public Class frmGoodsReceipt
 
     ''' <summary>Writes one counted quantity back into the validated COMMAREA (PO-009).</summary>
     Private Sub CountClicked(ByVal sender As Object, ByVal e As EventArgs)
+        If Not HeaderReady() Then Return
         If _grid.CurrentRow Is Nothing Then
             SetStatus("Select the line you have counted first.", "!  WARNING")
             Return
@@ -141,12 +148,13 @@ Public Class frmGoodsReceipt
 
     ''' <summary>F10 confirms the delivery; RECEIPT applies the tolerances and posts (PO-009, PO-011).</summary>
     Protected Overrides Sub OnConfirm()
+        If Not HeaderReady() Then Return
         If Not Confirm("Confirm this delivery against " & _edit("ORDER").Text.Trim() & "?") Then Return
         Guard(Sub()
-                  Dim func As String = If(Convert.ToString(_cboOwner.SelectedItem) = "IN-TRANSIT", "TRANSIT", "CONFIRM")
-                  Dim r As CobolResult = _svc.Confirm(func)
+                  Dim r As CobolResult = _svc.Confirm("CONFIRM")
                   GridHelper.Bind(_grid, _svc.Lines())
                   If Not ShowResult(r) Then Return
+                  _loadedHeader = Nothing
                   SetStatus("Receipt " & _svc.ReceiptRef & " " & _svc.Status & ": " & _svc.LinesAccepted &
                             " accepted, " & _svc.LinesQuarantined & " quarantined, " & _svc.LinesHeld &
                             " held.  GRNI " & Fmt.Money(_svc.GrniGBP) & ", price variance " &
@@ -193,5 +201,28 @@ Public Class frmGoodsReceipt
             v(k) = _edit(k).Text
         Next
         Return v
+    End Function
+
+    Private Function Header() As Dictionary(Of String, String)
+        Dim values As New Dictionary(Of String, String)
+        For Each field As String() In _head
+            values(field(0)) = _edit(field(0)).Text.Trim()
+        Next
+        values("OWNERSHIP") = Convert.ToString(_cboOwner.SelectedItem)
+        Return values
+    End Function
+
+    Private Function HeaderReady() As Boolean
+        If _loadedHeader Is Nothing Then
+            SetStatus("Validate the delivery against an order before counting or confirming.", "!  WARNING")
+            Return False
+        End If
+        For Each field As KeyValuePair(Of String, String) In Header()
+            If Not String.Equals(field.Value, _loadedHeader(field.Key), StringComparison.OrdinalIgnoreCase) Then
+                SetStatus("The receipt header has changed. Validate it again before counting or confirming.", "!  WARNING")
+                Return False
+            End If
+        Next
+        Return True
     End Function
 End Class
