@@ -13,10 +13,12 @@
 SET NOCOUNT ON;
 GO
 IF OBJECT_ID('tempdb..#BomDef') IS NOT NULL DROP TABLE #BomDef;
-CREATE TABLE #BomDef (BomRef varchar(30), BomRev varchar(4), ParentItem varchar(40),
-    Descr varchar(150), Basis decimal(19,6), Yield decimal(9,6), Quantum decimal(19,6),
+CREATE TABLE #BomDef (BomRef varchar(30) COLLATE DATABASE_DEFAULT, BomRev varchar(4) COLLATE DATABASE_DEFAULT,
+    ParentItem varchar(40) COLLATE DATABASE_DEFAULT, Descr varchar(150) COLLATE DATABASE_DEFAULT,
+    Basis decimal(19,6), Yield decimal(9,6), Quantum decimal(19,6),
     BatchSize decimal(19,6), Phantom bit, Consolidate bit, SetupCost decimal(19,6),
-    ConvCost decimal(19,6), EffFrom date, EffTo date, Status varchar(12), LossNote varchar(200),
+    ConvCost decimal(19,6), EffFrom date, EffTo date, Status varchar(12) COLLATE DATABASE_DEFAULT,
+    LossNote varchar(200) COLLATE DATABASE_DEFAULT,
     PRIMARY KEY (BomRef, BomRev));
 INSERT #BomDef VALUES
  ('BOM-DEMO-FRAME','A','DEMO-FRAME','B1 frame assembly, ten gross frames per batch',1,1.000000,1,10,0,0,10.000000,0.500000,'2026-01-01',NULL,'RELEASED','Frame yield is one; no component scrap is claimed at this level'),
@@ -69,10 +71,13 @@ WHEN NOT MATCHED THEN INSERT (CompanyCode, BomRef, BomRevision, ParentItemCode, 
      CASE WHEN s.Status = 'RELEASED' THEN SYSDATETIME() END, s.LossNote, 'ENGINEER');
 GO
 IF OBJECT_ID('tempdb..#BomCmp') IS NOT NULL DROP TABLE #BomCmp;
-CREATE TABLE #BomCmp (BomRef varchar(30), BomRev varchar(4), LineNum int, Item varchar(40),
-    Qty decimal(19,6), Basis varchar(12), Uom varchar(10), Conv decimal(19,9), Scrap decimal(9,6),
-    Supply varchar(10), Optional bit, AltGroup varchar(10), Selected bit, OptionRef varchar(20),
-    CostRate decimal(19,6), CostElement varchar(10), Notes varchar(300));
+CREATE TABLE #BomCmp (BomRef varchar(30) COLLATE DATABASE_DEFAULT, BomRev varchar(4) COLLATE DATABASE_DEFAULT,
+    LineNum int, Item varchar(40) COLLATE DATABASE_DEFAULT, Qty decimal(19,6),
+    Basis varchar(12) COLLATE DATABASE_DEFAULT, Uom varchar(10) COLLATE DATABASE_DEFAULT,
+    Conv decimal(19,9), Scrap decimal(9,6), Supply varchar(10) COLLATE DATABASE_DEFAULT,
+    Optional bit, AltGroup varchar(10) COLLATE DATABASE_DEFAULT, Selected bit,
+    OptionRef varchar(20) COLLATE DATABASE_DEFAULT, CostRate decimal(19,6),
+    CostElement varchar(10) COLLATE DATABASE_DEFAULT, Notes varchar(300) COLLATE DATABASE_DEFAULT);
 INSERT #BomCmp VALUES
  ('BOM-DEMO-FRAME','A',10,'DEMO-BRACE',2,'PROPORTION','EA',1,0,'MAKE',0,NULL,1,NULL,NULL,NULL,'Two braces per frame'),
  ('BOM-DEMO-FRAME','A',20,'DEMO-PACK',1,'PROPORTION','EA',1,0,'PHANTOM',0,NULL,1,NULL,NULL,NULL,'Phantom packing group'),
@@ -157,4 +162,3 @@ GO
 DROP TABLE #BomDef;
 DROP TABLE #BomCmp;
 GO
-

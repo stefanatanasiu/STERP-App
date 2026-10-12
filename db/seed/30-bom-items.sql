@@ -7,8 +7,10 @@
 SET NOCOUNT ON;
 GO
 IF OBJECT_ID('tempdb..#BomDemoItem') IS NOT NULL DROP TABLE #BomDemoItem;
-CREATE TABLE #BomDemoItem (ItemCode varchar(40) PRIMARY KEY, Description varchar(100), ItemClass varchar(12),
-    StockUom varchar(10), Quantum decimal(19,6), Indivisible bit, MakeBuy varchar(6), Manu bit, Stocked bit,
+CREATE TABLE #BomDemoItem (ItemCode varchar(40) COLLATE DATABASE_DEFAULT PRIMARY KEY,
+    Description varchar(100) COLLATE DATABASE_DEFAULT, ItemClass varchar(12) COLLATE DATABASE_DEFAULT,
+    StockUom varchar(10) COLLATE DATABASE_DEFAULT, Quantum decimal(19,6), Indivisible bit,
+    MakeBuy varchar(6) COLLATE DATABASE_DEFAULT, Manu bit, Stocked bit,
     Purch bit, PackMult decimal(19,6));
 INSERT #BomDemoItem VALUES
  ('DEMO-FRAME','Demonstration frame assembly (B1 root)','MADE','EA',1,1,'MAKE',1,1,0,NULL),

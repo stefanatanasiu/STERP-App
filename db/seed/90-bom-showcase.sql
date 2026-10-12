@@ -14,10 +14,12 @@
 SET NOCOUNT ON;
 GO
 IF OBJECT_ID('tempdb..#ScItem') IS NOT NULL DROP TABLE #ScItem;
-CREATE TABLE #ScItem (ItemCode varchar(40) PRIMARY KEY, Description varchar(100), ItemClass varchar(12),
-    Category varchar(20), StockUom varchar(10), Quantum decimal(19,6), Indivisible bit, MakeBuy varchar(6),
-    Manu bit, Stocked bit, Purch bit, Sale bit, Trace varchar(8), ShelfLife int, ValGroup varchar(20),
-    Loc varchar(20), Lead smallint);
+CREATE TABLE #ScItem (ItemCode varchar(40) COLLATE DATABASE_DEFAULT PRIMARY KEY,
+    Description varchar(100) COLLATE DATABASE_DEFAULT, ItemClass varchar(12) COLLATE DATABASE_DEFAULT,
+    Category varchar(20) COLLATE DATABASE_DEFAULT, StockUom varchar(10) COLLATE DATABASE_DEFAULT,
+    Quantum decimal(19,6), Indivisible bit, MakeBuy varchar(6) COLLATE DATABASE_DEFAULT,
+    Manu bit, Stocked bit, Purch bit, Sale bit, Trace varchar(8) COLLATE DATABASE_DEFAULT, ShelfLife int,
+    ValGroup varchar(20) COLLATE DATABASE_DEFAULT, Loc varchar(20) COLLATE DATABASE_DEFAULT, Lead smallint);
 INSERT #ScItem VALUES
  -- the cake: finished good, sub-recipes and the decoration phantom
  ('FG-CAKE-CELEB-8IN','Celebration cake, three layer, 8 inch, vanilla and raspberry','MADE','BAKERY','EA',1,1,'MAKE',1,1,0,1,'LOT',5,'FINISHED','FG01',1),
@@ -130,9 +132,10 @@ GO
 DROP TABLE #ScItem;
 GO
 IF OBJECT_ID('tempdb..#ScDef') IS NOT NULL DROP TABLE #ScDef;
-CREATE TABLE #ScDef (BomRef varchar(30) PRIMARY KEY, ParentItem varchar(40), Descr varchar(150),
+CREATE TABLE #ScDef (BomRef varchar(30) COLLATE DATABASE_DEFAULT PRIMARY KEY,
+    ParentItem varchar(40) COLLATE DATABASE_DEFAULT, Descr varchar(150) COLLATE DATABASE_DEFAULT,
     Basis decimal(19,6), Yield decimal(9,6), Quantum decimal(19,6), BatchSize decimal(19,6), Phantom bit,
-    SetupCost decimal(19,6), ConvCost decimal(19,6), LossNote varchar(200));
+    SetupCost decimal(19,6), ConvCost decimal(19,6), LossNote varchar(200) COLLATE DATABASE_DEFAULT);
 INSERT #ScDef VALUES
  ('CK-CELEB-8IN','FG-CAKE-CELEB-8IN','Celebration cake: three sponge layers, filling, fondant cover and decoration',1,1.000000,1,12,0,4.500000,6.000000,'Assembly yield is one; the fondant trimming is a component allowance'),
  ('CK-SPONGE-8IN','SA-CAKE-SPONGE-8IN','Sponge layer, six to an oven load, four per cent cracked or domed',1,0.960000,1,6,0,3.000000,0.850000,'Yield models layers lost in the oven; levelling offcuts are recovered as crumb'),
@@ -178,9 +181,12 @@ WHEN NOT MATCHED THEN INSERT (CompanyCode, BomRef, BomRevision, ParentItemCode, 
      'ENGINEER', 'ENGMGR', 'ENGMGR', SYSDATETIME(), s.LossNote, 'ENGINEER');
 GO
 IF OBJECT_ID('tempdb..#ScCmp') IS NOT NULL DROP TABLE #ScCmp;
-CREATE TABLE #ScCmp (BomRef varchar(30), LineNum int, Item varchar(40), Qty decimal(19,6), Basis varchar(12),
-    Uom varchar(10), Conv decimal(19,9), Scrap decimal(9,6), Supply varchar(10), CostRate decimal(19,6),
-    CostElement varchar(10), Notes varchar(300), PRIMARY KEY (BomRef, LineNum));
+CREATE TABLE #ScCmp (BomRef varchar(30) COLLATE DATABASE_DEFAULT, LineNum int,
+    Item varchar(40) COLLATE DATABASE_DEFAULT, Qty decimal(19,6), Basis varchar(12) COLLATE DATABASE_DEFAULT,
+    Uom varchar(10) COLLATE DATABASE_DEFAULT, Conv decimal(19,9), Scrap decimal(9,6),
+    Supply varchar(10) COLLATE DATABASE_DEFAULT, CostRate decimal(19,6),
+    CostElement varchar(10) COLLATE DATABASE_DEFAULT, Notes varchar(300) COLLATE DATABASE_DEFAULT,
+    PRIMARY KEY (BomRef, LineNum));
 INSERT #ScCmp VALUES
  ('CK-CELEB-8IN',10,'SA-CAKE-SPONGE-8IN',3,'PROPORTION','EA',1,0,'MAKE',NULL,NULL,'Three sponge layers per cake'),
  ('CK-CELEB-8IN',20,'SA-CAKE-BUTTERCREAM',450,'PROPORTION','G',0.001,0,'MAKE',NULL,NULL,'Filling between the layers and the crumb coat'),
