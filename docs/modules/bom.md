@@ -151,6 +151,25 @@ is the reference: the netted maximum is **nine frames**, and `TBOMNET` asserts i
 
 ## 3. Database objects
 
+### Bulk replacement preview (GUI)
+
+`Bills of Material → Bulk Change Preview` (`BOM.CHANGE.PREVIEW`,
+`frmBomBulkPreview`) uses existing `BOM.VIEW` authority, not change approval.
+Enter a change reference, old component, replacement, effective date, scope
+(`ITEM`, `BOMREF` or `PARENT`) and optional bill/parent. F10 calls native
+`BOMBULK PREVIEW`; F5 clears the displayed result. The grid shows every proposed
+revision, before/after quantity, outcome and native reason even when refused.
+The answer panel retains the complete summary/refusal. There is no apply button.
+
+Demo: `ECO-BOMDEMO-001`, `DEMO-PIN` → `DEMO-PIN-HD`, `01/11/2026`,
+scope `ITEM`, include released and draft bills. Seven bills are previewed; the
+unconfigured alternate group refuses the run (`BOM1411`), with zero applied.
+`DEMO-NOT-AN-ITEM` is an invalid replacement and is also refused by the engine.
+Preview persists request/outcome evidence in `BomChange`/`BomChangeLine`, but rolls
+back all proposed bill revisions. The seeded change header does not store source
+or replacement inputs; enter them explicitly. Native preview/paging requires
+`BOM.VIEW`; native apply retains separate `BOM.CHANGE.APPROVE` authority.
+
 | Object | Purpose |
 |---|---|
 | `bom.BomHeader` / `BomComponent` / `BomByProduct` | the versioned structures; effectivity is half-open `[from, to)` |
@@ -165,7 +184,7 @@ is the reference: the netted maximum is **nine frames**, and `TBOMNET` asserts i
 | `bom.vw_BomComponentUsage` | one readable row per occurrence; notes/services/cost-only flagged as non-stock (BOM-027) |
 | `bom.vw_BomCurrentRevision` | the deterministic selection, `SelectionRank = 1` is the effective revision (BOM-005) |
 | `bom.vw_BomExplosionSummary` | retained runs with completeness, stop reasons and shortage counts |
-| `bom.tr_BomReleasedImmutable` | a released revision is frozen; an identical rewrite is not a change, a real one is refused (BOM-004) |
+| `bom.tr_BomReleasedImmutable` | released header/component content is frozen, including NULL-safe header comparisons; identical rewrites and audit stamps are allowed, real changes are refused (BOM-004). Normal supersession/effectivity closure remains allowed |
 | `bom.tr_BomHeaderRetireCheck` | a referenced revision cannot be retired (BOM-028) |
 
 Seeds: `30-bom-items.sql` (B1-B6 items), `31-bom-structures.sql` (the bills themselves),

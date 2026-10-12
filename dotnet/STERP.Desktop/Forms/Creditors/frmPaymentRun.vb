@@ -26,14 +26,18 @@ Public Class frmPaymentRun
 
     Protected Overrides Sub BuildTools()
         AddSeparator()
+        AddTool("Build proposal", "RUN", AddressOf BuildClicked)
         AddTool("Totals (F10)", "ENGINE", AddressOf TotalsClicked)
         AddTool("Lines", "FIND", AddressOf LinesClicked)
+        AddTool("Reserve", "RUN", AddressOf ReserveClicked)
+        AddTool("Release reservations", "REJECT", AddressOf ReleaseClicked)
         AddSeparator()
         AddTool("Request approval", "RUN", AddressOf RequestClicked)
         AddTool("Approve", "POST", AddressOf ApproveClicked)
         AddTool("Reject", "REJECT", AddressOf RejectClicked)
         AddSeparator()
         AddTool("Create instructions", "RUN", AddressOf CreateClicked)
+        AddTool("Bacs file", "PRINT", AddressOf BacsClicked)
         AddSeparator()
     End Sub
 
@@ -49,10 +53,76 @@ Public Class frmPaymentRun
         TotalsClicked(Nothing, EventArgs.Empty)
     End Sub
 
+    Private Sub BuildClicked(ByVal sender As Object, ByVal e As EventArgs)
+        Dim today As String = Fmt.Date(SterpSession.Current.BusinessDate)
+        Dim v As Dictionary(Of String, String) = ApInputDialog.Collect(Me, "Build new payment proposal (preview)",
+            New String()() {
+                New String() {"CUTOFF", "Due-date cutoff (dd/MM/yyyy)", today, "10"},
+                New String() {"PAYDATE", "Requested payment date (dd/MM/yyyy)", today, "10"},
+                New String() {"METHOD", "Method (BACS/FPS/CHAPS/SWIFT/SEPA)", "BACS", "10"},
+                New String() {"BANK", "Company bank account", "GBP1", "20"}})
+        If v Is Nothing Then Return
+        Dim cutoff, payDate As Date
+        If Not Date.TryParseExact(v("CUTOFF"), "dd/MM/yyyy",
+                Globalization.CultureInfo.InvariantCulture, Globalization.DateTimeStyles.None, cutoff) OrElse
+           Not Date.TryParseExact(v("PAYDATE"), "dd/MM/yyyy", Globalization.CultureInfo.InvariantCulture,
+                Globalization.DateTimeStyles.None, payDate) Then
+            ShowError("Enter valid dates in dd/MM/yyyy format.", "APPINPUT")
+            Return
+        End If
+        Guard(Sub()
+                  Dim r As CobolResult = _svc.Select_("", cutoff, payDate,
+                      v("METHOD").ToUpperInvariant(), v("BANK").ToUpperInvariant())
+                  If Not ShowResult(r) Then Return
+                  Dim pref As String = _svc.ProposalReference
+                  _txtProposal.Text = pref
+                  LoadData()
+                  SetStatus(pref & ": preview built, " & _svc.SelectedCount & " selected, " &
+                            _svc.ExcludedCount & " excluded. Reserve before requesting approval.", "OK")
+              End Sub)
+    End Sub
+
+    Private Sub ReserveClicked(ByVal sender As Object, ByVal e As EventArgs)
+        ReservationClicked(False)
+    End Sub
+
+    Private Sub ReleaseClicked(ByVal sender As Object, ByVal e As EventArgs)
+        ReservationClicked(True)
+    End Sub
+
+    Private Sub ReservationClicked(ByVal release As Boolean)
+        Dim pref As String = Proposal()
+        If pref = "" Then Return
+        If Not Confirm(If(release, "Release the reservations (not payment authority) for ",
+                                  "Reserve the selected items for ") & pref & "?") Then Return
+        Guard(Sub()
+                  Dim r As CobolResult = If(release, _svc.Release(pref), _svc.Reserve(pref))
+                  If Not ShowResult(r) Then Return
+                  LoadData()
+                  SetStatus(pref & If(release, ": reservations released.", ": items reserved. Request approval next.") &
+                            " " & _svc.Note, "OK")
+              End Sub)
+    End Sub
+
+    Private Sub BacsClicked(ByVal sender As Object, ByVal e As EventArgs)
+        Dim pref As String = Proposal()
+        If pref = "" Then Return
+        Guard(Sub()
+                  Dim f As New frmReportLauncher()
+                  f.FormArgument = "APBACS"
+                  f.InitialParameters("RUN") = pref
+                  f.MdiParent = Me.MdiParent
+                  f.Show()
+                  SetStatus("Bacs launcher opened for " & pref &
+                            ". Run creates a local Standard 18 file; no bank transmission.", "")
+              End Sub)
+    End Sub
+
     Private Sub LinesClicked(ByVal sender As Object, ByVal e As EventArgs)
         Dim pref As String = Proposal()
         If pref = "" Then Return
         Guard(Sub()
+                  _txtProposal.Text = pref
                   _showingLines = True
                   Populate(_svc.Lines(pref))
                   SetStatus("Lines of " & pref & ". An excluded line names its reason; press F5 for " &
@@ -77,7 +147,9 @@ Public Class frmPaymentRun
         Dim pref As String = Proposal()
         If pref = "" Then Return
         Guard(Sub()
-                  Dim r As CobolResult = _svc.RequestApproval(pref, Amount())
+                  Dim totals As CobolResult = _svc.Totals(pref)
+                  If Not ShowResult(totals) Then Return
+                  Dim r As CobolResult = _svc.RequestApproval(pref, _svc.TotalOutflow)
                   If Not ShowResult(r) Then Return
                   SetStatus("Approval requested for " & pref & ". " & _svc.Note, "OK")
               End Sub)
@@ -98,7 +170,9 @@ Public Class frmPaymentRun
         If pref = "" Then Return
         If Not Confirm(decision & " payment proposal " & pref & "?") Then Return
         Guard(Sub()
-                  Dim r As CobolResult = _svc.Decide(pref, decision, comment, Amount())
+                  Dim totals As CobolResult = _svc.Totals(pref)
+                  If Not ShowResult(totals) Then Return
+                  Dim r As CobolResult = _svc.Decide(pref, decision, comment, _svc.TotalOutflow)
                   If Not ShowResult(r) Then
                       SetStatus(decision & " refused: " & r.Display, "*** ERROR")
                       Return
@@ -122,11 +196,6 @@ Public Class frmPaymentRun
                             ". Run the BACS report to produce the Standard 18 file.", "OK")
               End Sub)
     End Sub
-
-    Private Function Amount() As Decimal
-        If _showingLines Then Return 0D
-        Return Fmt.Dec(GridHelper.Selected(Grid, "TotalOutflowGBP"))
-    End Function
 
     Private Function Proposal() As String
         Dim pref As String = _txtProposal.Text.Trim().ToUpperInvariant()

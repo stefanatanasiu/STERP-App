@@ -43,6 +43,17 @@
        COPY EXCPRAISCA REPLACING ==DFHCOMMAREA== BY ==WS-EXCP-CA==.
        COPY AUDITLOGCA REPLACING ==DFHCOMMAREA== BY ==WS-AUDIT-CA==.
        COPY DATECALCCA REPLACING ==DFHCOMMAREA== BY ==WS-DATE-CA==.
+       COPY PERMCHKCA REPLACING ==DFHCOMMAREA== BY ==WS-PERM-CA==.
+       01  WS-OV-ROW.
+           05  WS-OV-CUSTOMER          PIC X(20).
+           05  WS-OV-REQUESTER         PIC X(20).
+           05  WS-OV-EXPIRY            PIC X(8).
+           05  WS-OV-STATUS            PIC X(10).
+           05  WS-OV-AMOUNT            PIC X(24).
+           05  WS-OV-REASON            PIC X(300).
+           05  WS-OV-SCOPE             PIC X(12).
+           05  WS-OV-DOCUMENT          PIC X(40).
+           05  WS-OV-FROM              PIC X(8).
        01  WS-CUST.
            05  WS-CU-NAME              PIC X(120).
            05  WS-CU-STATUS            PIC X(10).
@@ -66,6 +77,7 @@
            05  WS-BLOCK-SET            PIC X VALUE "N".
            05  WS-HOLD-SET             PIC X VALUE "N".
        01  WS-FUNC-NO                  PIC S9(4) VALUE 0.
+       01  WS-UOW-OWN                  PIC X VALUE "N".
        LINKAGE SECTION.
        COPY CREDCHKCA.
        PROCEDURE DIVISION USING DFHCOMMAREA.
@@ -126,6 +138,7 @@
            INITIALIZE AR-CTL
            INITIALIZE WS-CUST
            INITIALIZE WS-SUM-ROW
+           MOVE "N" TO WS-UOW-OWN
            MOVE "N" TO WS-BLOCK-SET WS-HOLD-SET
            MOVE "Y" TO WS-SO-PRESENT
            MOVE CA-FUNCTION OF DFHCOMMAREA TO AR-FUNC
@@ -599,6 +612,9 @@
                GO TO 2000-EXIT
            END-IF
            PERFORM 2200-COMMERCIAL-REFUSALS
+           IF WS-HOLD-SET = "Y" AND CK-OVERRIDE-ACTIVE = "Y"
+               PERFORM 2270-COMMERCIAL-OVERRIDE
+           END-IF
            IF WS-HOLD-SET = "Y"
                PERFORM 2300-RAISE-HOLD
            ELSE
@@ -629,12 +645,15 @@
                   "CONVERT(char(8), v.ExpiresOn, 112), v.Status "
                   "FROM ar.CreditOverride v WHERE v.CompanyCode = ? "
                   "AND v.CustomerCode = ? AND v.Status = 'ACTIVE' "
+                  "AND v.ApprovedBy IS NOT NULL "
+                  "AND v.ApprovedBy <> v.RequestedBy "
                   "AND v.ValidFrom <= ? AND v.ExpiresOn >= ? "
-                  "AND (v.DocumentRef IS NULL OR v.DocumentRef = '' "
-                  "OR v.DocumentRef = ?) "
+                  "AND (v.Scope = 'ACCOUNT' OR "
+                  "(v.DocumentRef = ? AND (v.Scope = 'ORDER' OR "
+                  "(v.Scope = 'DESPATCH' AND ? = 'DESPATCH')))) "
                   "ORDER BY v.OverrideAmountGBP DESC"
                DELIMITED BY SIZE INTO SQLIO-STMT
-           MOVE 5 TO SQLIO-PARM-CNT
+           MOVE 6 TO SQLIO-PARM-CNT
            MOVE AR-CO TO SQLIO-PARM-VAL(1)
            MOVE "N" TO SQLIO-PARM-NULL(1)
            MOVE CK-CUSTOMER TO SQLIO-PARM-VAL(2)
@@ -645,6 +664,8 @@
            MOVE "N" TO SQLIO-PARM-NULL(4)
            MOVE CK-DOCUMENT-REF TO SQLIO-PARM-VAL(5)
            MOVE "N" TO SQLIO-PARM-NULL(5)
+           MOVE CK-CHECK-POINT TO SQLIO-PARM-VAL(6)
+           MOVE "N" TO SQLIO-PARM-NULL(6)
            MOVE 4 TO SQLIO-COL-CNT
            MOVE 24 TO SQLIO-COL-WIDTH(1)
            MOVE 24 TO SQLIO-COL-WIDTH(2)
@@ -776,6 +797,21 @@
        2250-EXIT.
            EXIT.
 
+      *>   Commercial holds require cover for the held commitment and
+      *>   overdue balance as well as any limit excess. Hard blocks
+      *>   leave 2000 before this paragraph and are never overridden.
+       2270-COMMERCIAL-OVERRIDE SECTION.
+       2270-START.
+           COMPUTE AR-AMT1 = FUNCTION MAX(CK-EXCESS,
+               CK-OVERDUE-GBP, CK-ORDER-VALUE-GBP)
+           IF CK-OVERRIDE-AMT >= AR-AMT1
+               MOVE "N" TO WS-HOLD-SET
+               MOVE "RELEASE" TO CK-DECISION
+               PERFORM 2250-LIMIT-REFUSAL
+           END-IF.
+       2270-EXIT.
+           EXIT.
+
       *>   a hold is an owned exception, not just a message (COM-017)
        2300-RAISE-HOLD SECTION.
        2300-START.
@@ -829,6 +865,15 @@
       *>   expiry and the authority that will be needed (AR-008)
        3000-REQUEST-OVERRIDE SECTION.
        3000-START.
+           MOVE "SO.ORDER.ENTER" TO CK-APPROVER-PERM
+           PERFORM 3800-CHECK-AUTHORITY
+           IF AR-RC-STOP
+               MOVE 0 TO AR-RC
+               MOVE "AR.CREDIT.OVERRIDE" TO CK-APPROVER-PERM
+               PERFORM 3800-CHECK-AUTHORITY
+           END-IF
+           IF AR-RC-STOP GO TO 3000-EXIT END-IF
+           MOVE AR-USERID TO CK-OVERRIDE-BY
            IF CK-OVERRIDE-REASON = SPACES
               OR CK-OVERRIDE-REASON = LOW-VALUES
                MOVE "CRD0050" TO AR-REASON
@@ -849,9 +894,29 @@
            IF CK-OVERRIDE-SCOPE = SPACES
                MOVE "ORDER" TO CK-OVERRIDE-SCOPE
            END-IF
+           IF CK-OVERRIDE-SCOPE NOT = "ORDER" AND "DESPATCH"
+              AND "ACCOUNT"
+               MOVE "CRD0057" TO AR-REASON
+               MOVE "Scope must be ORDER, DESPATCH or ACCOUNT"
+                   TO AR-MSG
+               PERFORM 9000-REJECT
+               GO TO 3000-EXIT
+           END-IF
+           IF CK-OVERRIDE-SCOPE NOT = "ACCOUNT"
+              AND CK-DOCUMENT-REF = SPACES
+               MOVE "CRD0058" TO AR-REASON
+               MOVE "A scoped override needs a document reference"
+                   TO AR-MSG
+               PERFORM 9000-REJECT
+               GO TO 3000-EXIT
+           END-IF
            PERFORM 3100-EXPIRY-DATE
+           IF AR-RC-STOP GO TO 3000-EXIT END-IF
            PERFORM 3200-REQUIRED-AUTHORITY
-           PERFORM 3300-INSERT-OVERRIDE.
+           PERFORM 3900-BEGIN
+           IF AR-RC-STOP GO TO 3000-EXIT END-IF
+           PERFORM 3300-INSERT-OVERRIDE
+           PERFORM 3950-FINISH.
        3000-EXIT.
            EXIT.
 
@@ -884,7 +949,10 @@
            IF CA-RETURN-CODE OF WS-DATE-CA < 8
                MOVE DC-RESULT-DATE TO CK-OVERRIDE-EXPIRY
            ELSE
-               COMPUTE CK-OVERRIDE-EXPIRY = CK-EVAL-DATE + 7
+               MOVE 12 TO AR-RC
+               MOVE "CRD0059" TO AR-REASON
+               MOVE "Cannot calculate the override expiry"
+                   TO AR-MSG
            END-IF.
        3100-EXIT.
            EXIT.
@@ -918,7 +986,8 @@
                   "CustomerCode, Scope, DocumentRef, "
                   "OverrideAmountGBP, ExcessGBP, Reason, RequestedBy, "
                   "ValidFrom, ExpiresOn, Status) VALUES "
-                  "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING')"
+                  "(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 'PENDING'); "
+                  "SELECT CONVERT(varchar(24), SCOPE_IDENTITY())"
                DELIMITED BY SIZE INTO SQLIO-STMT
            MOVE 10 TO SQLIO-PARM-CNT
            MOVE AR-CO TO SQLIO-PARM-VAL(1)
@@ -940,9 +1009,10 @@
            PERFORM VARYING AR-I FROM 1 BY 1 UNTIL AR-I > 10
                MOVE "N" TO SQLIO-PARM-NULL(AR-I)
            END-PERFORM
-           MOVE 0 TO SQLIO-COL-CNT
+           MOVE 1 TO SQLIO-COL-CNT
+           MOVE 24 TO SQLIO-COL-WIDTH(1)
            MOVE 3 TO SQLIO-CURSOR
-           MOVE "EXEC" TO SQLIO-FUNC
+           MOVE "SNGL" TO SQLIO-FUNC
            CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
            IF SQLIO-ERROR
                PERFORM 9300-SQL-FAILED
@@ -950,7 +1020,10 @@
            END-IF
            MOVE "CLOS" TO SQLIO-FUNC
            CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+           COMPUTE CK-OVERRIDE-ID = FUNCTION NUMVAL(WS-S1)
            MOVE "PENDING" TO CK-OVERRIDE-STATUS
+           PERFORM 3700-AUDIT-OVERRIDE
+           IF AR-RC-STOP GO TO 3300-EXIT END-IF
            MOVE 4 TO AR-RC
            MOVE "CRD0052" TO AR-REASON
            MOVE SPACES TO AR-MSG
@@ -971,7 +1044,7 @@
                GO TO 3500-EXIT
            END-IF
            PERFORM 3600-READ-OVERRIDE
-           IF AR-RC-BAD
+           IF AR-RC-STOP
                GO TO 3500-EXIT
            END-IF
            IF CK-OVERRIDE-BY = AR-USERID
@@ -983,17 +1056,41 @@
                    DELIMITED BY SIZE INTO AR-MSG
                GO TO 3500-EXIT
            END-IF
+           IF CK-OVERRIDE-EXPIRY < CK-EVAL-DATE
+              OR CK-OVERRIDE-FROM > CK-EVAL-DATE
+               MOVE 8 TO AR-RC
+               MOVE "CRD0060" TO AR-REASON
+               MOVE "That override is not valid on the business date"
+                   TO AR-MSG
+               GO TO 3500-EXIT
+           END-IF
+           PERFORM 3200-REQUIRED-AUTHORITY
+           PERFORM 3800-CHECK-AUTHORITY
+           IF AR-RC-STOP GO TO 3500-EXIT END-IF
+           PERFORM 3900-BEGIN
+           IF AR-RC-STOP GO TO 3500-EXIT END-IF
            MOVE SPACES TO SQLIO-STMT
            STRING "UPDATE ar.CreditOverride SET Status = 'ACTIVE', "
                   "ApprovedBy = ?, ApprovedAt = SYSDATETIME() "
-                  "WHERE OverrideId = ? AND Status = 'PENDING'"
+                  "WHERE OverrideId = ? AND CompanyCode = ? "
+                  "AND CustomerCode = ? AND Status = 'PENDING' "
+                  "AND RequestedBy <> ? AND ExpiresOn >= ? "
+                  "AND ValidFrom <= ?"
                DELIMITED BY SIZE INTO SQLIO-STMT
-           MOVE 2 TO SQLIO-PARM-CNT
+           MOVE 7 TO SQLIO-PARM-CNT
            MOVE AR-USERID TO SQLIO-PARM-VAL(1)
            MOVE "N" TO SQLIO-PARM-NULL(1)
            MOVE CK-OVERRIDE-ID TO AR-INT-ED
            MOVE FUNCTION TRIM(AR-INT-ED) TO SQLIO-PARM-VAL(2)
            MOVE "N" TO SQLIO-PARM-NULL(2)
+           MOVE AR-CO TO SQLIO-PARM-VAL(3)
+           MOVE CK-CUSTOMER TO SQLIO-PARM-VAL(4)
+           MOVE AR-USERID TO SQLIO-PARM-VAL(5)
+           MOVE CK-EVAL-DATE TO SQLIO-PARM-VAL(6)
+           MOVE CK-EVAL-DATE TO SQLIO-PARM-VAL(7)
+           PERFORM VARYING AR-I FROM 3 BY 1 UNTIL AR-I > 7
+               MOVE "N" TO SQLIO-PARM-NULL(AR-I)
+           END-PERFORM
            MOVE 0 TO SQLIO-COL-CNT
            MOVE 3 TO SQLIO-CURSOR
            MOVE "EXEC" TO SQLIO-FUNC
@@ -1016,6 +1113,7 @@
            MOVE "Y" TO CK-OVERRIDE-ACTIVE
            MOVE AR-USERID TO CK-OVERRIDE-APPR
            PERFORM 3700-AUDIT-OVERRIDE
+           IF AR-RC-STOP GO TO 3500-EXIT END-IF
            MOVE 0 TO AR-RC
            MOVE SPACES TO AR-MSG
            STRING "Credit override approved to "
@@ -1023,27 +1121,40 @@
                   "/" CK-OVERRIDE-EXPIRY(1:4)
                DELIMITED BY SIZE INTO AR-MSG.
        3500-EXIT.
+           IF AR-IN-TRANSACTION = "Y"
+               PERFORM 3950-FINISH
+           END-IF
            EXIT.
 
        3600-READ-OVERRIDE SECTION.
        3600-START.
            MOVE SPACES TO SQLIO-STMT
            STRING "SELECT v.CustomerCode, v.RequestedBy, "
-                  "CONVERT(char(8), v.ExpiresOn, 112), v.Status "
-                  "FROM ar.CreditOverride v WHERE v.OverrideId = ?"
+                  "CONVERT(char(8), v.ExpiresOn, 112), v.Status, "
+                  "v.OverrideAmountGBP, v.Reason, v.Scope, "
+                  "ISNULL(v.DocumentRef,''), "
+                  "CONVERT(char(8), v.ValidFrom, 112) "
+                  "FROM ar.CreditOverride v WHERE v.OverrideId = ? "
+                  "AND v.CompanyCode = ? AND v.CustomerCode = ?"
                DELIMITED BY SIZE INTO SQLIO-STMT
-           MOVE 1 TO SQLIO-PARM-CNT
+           MOVE 3 TO SQLIO-PARM-CNT
            MOVE CK-OVERRIDE-ID TO AR-INT-ED
            MOVE FUNCTION TRIM(AR-INT-ED) TO SQLIO-PARM-VAL(1)
            MOVE "N" TO SQLIO-PARM-NULL(1)
-           MOVE 4 TO SQLIO-COL-CNT
-           MOVE 24 TO SQLIO-COL-WIDTH(1)
-           MOVE 24 TO SQLIO-COL-WIDTH(2)
-           MOVE 24 TO SQLIO-COL-WIDTH(3)
-           MOVE 24 TO SQLIO-COL-WIDTH(4)
+           MOVE AR-CO TO SQLIO-PARM-VAL(2)
+           MOVE CK-CUSTOMER TO SQLIO-PARM-VAL(3)
+           MOVE "N" TO SQLIO-PARM-NULL(2) SQLIO-PARM-NULL(3)
+           MOVE 9 TO SQLIO-COL-CNT
+           MOVE 20 TO SQLIO-COL-WIDTH(1) SQLIO-COL-WIDTH(2)
+           MOVE 8 TO SQLIO-COL-WIDTH(3) SQLIO-COL-WIDTH(9)
+           MOVE 10 TO SQLIO-COL-WIDTH(4)
+           MOVE 24 TO SQLIO-COL-WIDTH(5)
+           MOVE 300 TO SQLIO-COL-WIDTH(6)
+           MOVE 12 TO SQLIO-COL-WIDTH(7)
+           MOVE 40 TO SQLIO-COL-WIDTH(8)
            MOVE 1 TO SQLIO-CURSOR
            MOVE "SNGL" TO SQLIO-FUNC
-           CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+           CALL "SQLIO" USING SQLIO-CA WS-OV-ROW
            IF SQLIO-ERROR
                PERFORM 9300-SQL-FAILED
                GO TO 3600-EXIT
@@ -1054,12 +1165,16 @@
                MOVE "That credit override is not held" TO AR-MSG
                GO TO 3600-EXIT
            END-IF
-           MOVE WS-S1 TO CK-CUSTOMER
-           MOVE WS-S2 TO CK-OVERRIDE-BY
-           IF WS-S3(1:8) IS NUMERIC
-               MOVE WS-S3(1:8) TO CK-OVERRIDE-EXPIRY
-           END-IF
-           MOVE WS-S4 TO CK-OVERRIDE-STATUS.
+           MOVE WS-OV-CUSTOMER TO CK-CUSTOMER
+           MOVE WS-OV-REQUESTER TO CK-OVERRIDE-BY
+           MOVE WS-OV-EXPIRY TO CK-OVERRIDE-EXPIRY
+           MOVE WS-OV-FROM TO CK-OVERRIDE-FROM
+           MOVE WS-OV-STATUS TO CK-OVERRIDE-STATUS
+           COMPUTE CK-OVERRIDE-AMT =
+               FUNCTION NUMVAL(WS-OV-AMOUNT)
+           MOVE WS-OV-REASON TO CK-OVERRIDE-REASON
+           MOVE WS-OV-SCOPE TO CK-OVERRIDE-SCOPE
+           MOVE WS-OV-DOCUMENT TO CK-DOCUMENT-REF.
        3600-EXIT.
            EXIT.
 
@@ -1070,17 +1185,113 @@
            MOVE AR-CO TO CA-COMPANY OF WS-AUDIT-CA
            MOVE AR-USERID TO CA-USER OF WS-AUDIT-CA
            MOVE CK-EVAL-DATE TO CA-BUSINESS-DATE OF WS-AUDIT-CA
+           MOVE AR-CORREL TO CA-CORRELATION-ID OF WS-AUDIT-CA
            MOVE "ar.CreditOverride" TO AU-ENTITY-TYPE
            MOVE CK-OVERRIDE-ID TO AR-INT-ED
            MOVE FUNCTION TRIM(AR-INT-ED) TO AU-ENTITY-KEY
-           MOVE "APPROVE" TO AU-ACTION
            MOVE "Status" TO AU-FIELD-NAME
-           MOVE "PENDING" TO AU-OLD-VALUE
-           MOVE "ACTIVE" TO AU-NEW-VALUE
+           IF AR-FUNC = "OVERRIDE"
+               MOVE "REQUEST" TO AU-ACTION
+               MOVE "PENDING" TO AU-NEW-VALUE
+           ELSE
+               MOVE "APPROVE" TO AU-ACTION
+               MOVE "PENDING" TO AU-OLD-VALUE
+               MOVE "ACTIVE" TO AU-NEW-VALUE
+           END-IF
            MOVE CK-OVERRIDE-REASON TO AU-REASON
            MOVE "COBOL" TO AU-SOURCE
-           CALL "AUDITLOG" USING WS-AUDIT-CA.
+           MOVE CK-APPROVER-PERM TO AU-AUTHORITY-REF
+           CALL "AUDITLOG" USING WS-AUDIT-CA
+           IF CA-RETURN-CODE OF WS-AUDIT-CA > 4
+               MOVE 12 TO AR-RC
+               MOVE CA-MESSAGE OF WS-AUDIT-CA TO AR-MSG
+           END-IF.
        3700-EXIT.
+           EXIT.
+
+       3800-CHECK-AUTHORITY SECTION.
+       3800-START.
+           INITIALIZE WS-PERM-CA
+           MOVE "CHECK" TO CA-FUNCTION OF WS-PERM-CA
+           MOVE AR-CO TO CA-COMPANY OF WS-PERM-CA
+           MOVE AR-SITE TO CA-SITE OF WS-PERM-CA
+           MOVE AR-USERID TO CA-USER OF WS-PERM-CA
+           MOVE AR-BUSDATE TO CA-BUSINESS-DATE OF WS-PERM-CA
+           MOVE CK-APPROVER-PERM TO PK-PERMISSION
+           CALL "PERMCHK" USING WS-PERM-CA
+           IF CA-RETURN-CODE OF WS-PERM-CA > 4
+               MOVE 6 TO AR-RC
+               MOVE "CRD0061" TO AR-REASON
+               MOVE CA-MESSAGE OF WS-PERM-CA TO AR-MSG
+           ELSE
+               MOVE SPACES TO AR-REASON AR-MSG
+           END-IF.
+       3800-EXIT.
+           EXIT.
+
+       3900-BEGIN SECTION.
+       3900-START.
+           MOVE "TSTA" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+           IF SQLIO-ERROR
+               PERFORM 9300-SQL-FAILED
+               GO TO 3900-EXIT
+           END-IF
+           IF SQLIO-ROWCOUNT = 1
+               MOVE "BEGN" TO SQLIO-FUNC
+               CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+               IF SQLIO-ERROR
+                   PERFORM 9300-SQL-FAILED
+                   GO TO 3900-EXIT
+               END-IF
+               MOVE "Y" TO WS-UOW-OWN
+           END-IF
+           MOVE "Y" TO AR-IN-TRANSACTION
+           MOVE SPACES TO SQLIO-STMT
+           STRING "IF @@TRANCOUNT = 0 BEGIN TRANSACTION; "
+                  "SAVE TRANSACTION CREDCHK"
+               DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE 0 TO SQLIO-PARM-CNT SQLIO-COL-CNT
+           MOVE 3 TO SQLIO-CURSOR
+           MOVE "EXEC" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+           IF SQLIO-ERROR
+               PERFORM 9300-SQL-FAILED
+               PERFORM 3950-FINISH
+           ELSE
+               MOVE "CLOS" TO SQLIO-FUNC
+               CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+           END-IF.
+       3900-EXIT.
+           EXIT.
+
+       3950-FINISH SECTION.
+       3950-START.
+           MOVE 0 TO SQLIO-PARM-CNT SQLIO-COL-CNT
+           MOVE 3 TO SQLIO-CURSOR
+           IF WS-UOW-OWN = "Y"
+               IF AR-RC-STOP
+                   MOVE "ROLB" TO SQLIO-FUNC
+               ELSE
+                   MOVE "COMT" TO SQLIO-FUNC
+               END-IF
+               CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+               IF SQLIO-ERROR PERFORM 9300-SQL-FAILED END-IF
+           ELSE
+               IF AR-RC-STOP
+                   MOVE SPACES TO SQLIO-STMT
+                   STRING "IF XACT_STATE() = 1 "
+                          "ROLLBACK TRANSACTION CREDCHK"
+                       DELIMITED BY SIZE INTO SQLIO-STMT
+                   MOVE "EXEC" TO SQLIO-FUNC
+                   CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+                   IF SQLIO-ERROR PERFORM 9300-SQL-FAILED END-IF
+                   MOVE "CLOS" TO SQLIO-FUNC
+                   CALL "SQLIO" USING SQLIO-CA WS-SUM-ROW
+               END-IF
+           END-IF
+           MOVE "N" TO AR-IN-TRANSACTION.
+       3950-EXIT.
            EXIT.
 
       *>----------------------------------------------------------------

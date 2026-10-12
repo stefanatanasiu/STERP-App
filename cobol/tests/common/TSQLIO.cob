@@ -16,6 +16,34 @@
        PROCEDURE DIVISION.
            MOVE "TSQLIO" TO TK-SUITE
            PERFORM TK-BEGIN
+           MOVE "TSTA" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ROW
+           MOVE "SQLIO reports driver autocommit on" TO TK-NAME
+           IF SQLIO-OK AND SQLIO-ROWCOUNT = 1
+               PERFORM TK-PASS
+           ELSE
+               PERFORM TK-FAIL
+           END-IF
+           MOVE "BEGN" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ROW
+           MOVE "TSTA" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ROW
+           MOVE "SQLIO reports a caller-owned driver UOW" TO TK-NAME
+           IF SQLIO-OK AND SQLIO-ROWCOUNT = 0
+               PERFORM TK-PASS
+           ELSE
+               PERFORM TK-FAIL
+           END-IF
+           MOVE "ROLB" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ROW
+           MOVE "TSTA" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ROW
+           MOVE "SQLIO rollback restores driver autocommit" TO TK-NAME
+           IF SQLIO-OK AND SQLIO-ROWCOUNT = 1
+               PERFORM TK-PASS
+           ELSE
+               PERFORM TK-FAIL
+           END-IF
 
            MOVE "SNGL" TO SQLIO-FUNC
            MOVE "SELECT ?, CAST(? AS decimal(18,2)) * 2" TO SQLIO-STMT

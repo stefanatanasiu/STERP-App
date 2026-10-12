@@ -11,6 +11,7 @@ Partial Public Class frmReportLauncher
 
     Private ReadOnly _svc As New ReportService()
     Private ReadOnly _params As New Dictionary(Of String, TextBox)
+    Public ReadOnly InitialParameters As New Dictionary(Of String, String)(StringComparer.OrdinalIgnoreCase)
 
     Public Sub New()
         InitializeComponent()
@@ -60,6 +61,7 @@ Partial Public Class frmReportLauncher
                                          SterpSession.Current.PeriodNo.ToString("00")
                 Case "MODE" : t.Text = "PREVIEW"
             End Select
+            If InitialParameters.ContainsKey(key) Then t.Text = InitialParameters(key)
             _params(key) = t
             y += 25
         Next
@@ -89,6 +91,9 @@ Partial Public Class frmReportLauncher
         For Each kv As KeyValuePair(Of String, TextBox) In _params
             If kv.Value.Text.Trim().Length > 0 Then args(kv.Key) = kv.Value.Text.Trim()
         Next
+        ' Identity is always the signed-on user, even for reports whose ParamSpec
+        ' omits USER (APBACS otherwise falls back to APMGR).
+        args("USER") = SterpSession.Current.UserCode
         Guard(Sub()
                   Dim rr As ReportRun = _svc.Run(code, prog, args)
                   txtLog.Text = rr.Output.Replace(vbLf, vbCrLf).Replace(vbCr & vbCr, vbCr)

@@ -12,6 +12,33 @@ batch style.
 * Tests: `cobol\tests\ar\T*.cob`, `db\tests\ar-*.sql`, `dotnet\STERP.Tests\Debtors\DebtorsTests.cs`
 * Seed: `db\seed\50-ar-customers.sql`, `51-ar-eventmap.sql`, `52-ar-menu.sql`, `91-ar-demo.sql`
 
+### Native order-scoped credit overrides
+
+Sales operators use **Sales → Request Credit Override...** (`SO.ORDER.ENTER`).
+In `frmCreditOverride`, enter **Customer account**, **Order reference**, **Override amount GBP**
+and **Reason**, then click **Request override** (F10 in request mode). CREDCHK records a
+PENDING ORDER-scoped request with the signed-on requester and calculates the bounded expiry
+from `AR.OVERRIDE.MAX.WORKDAYS`; neither requester nor expiry is editable.
+
+For the Livingston held-order story: SALESREP, CAL/LIV, customer `K0004`, order `SOC900003`,
+amount `7128.00`, reason explaining the authority requested. Switch to CREDMGR, CAL/LIV,
+**Debtors → Credit Overrides...**, select that pending row and click **Approve selected**
+(F10). The engine rejects self-approval, checks the persisted amount against the financial
+controller threshold, company/customer context and validity dates, and atomically records
+the approval and audit. Requests and approvals both carry audit reason and correlation.
+Above the threshold, `FIN.CONTROL.OVERRIDE` is required instead of ordinary credit authority.
+
+Switch back to SALESREP and use normal Sales Order Entry **Accept / Release** for `SOC900003`.
+CREDMGR receives no sales-entry rights. An override is not acceptance or a direct order-status
+edit: the existing sales validations still apply. `93-so-demo.sql` corrects only this seeded
+order's missing invoice customer. An ACTIVE record without an independent approver cannot
+release an order; ORDER/DESPATCH overrides match their document and DESPATCH matches its checkpoint.
+
+Deploy `52-ar-menu.sql`, `93-so-demo.sql`, rebuilt `STERPCOB.dll`, `STERP.Business.dll`
+and `STERP.exe` together. The form is
+`dotnet\STERP.Desktop\Forms\Debtors\frmCreditOverride.vb`; the facade is `DebtorsService.vb`,
+and all decisions/writes remain in `cobol\online\ar\CREDCHK.cob`.
+
 ---
 
 ## 1. Interfaces other teams need (read this first)
@@ -117,6 +144,9 @@ CK-EXPOSURE = CK-OPEN-DEBT        open invoice residuals
 * Overrides are **scoped, limited and expiring**: `CK-OVERRIDE-SCOPE` (`ORDER` / `ACCOUNT`),
   `CK-OVERRIDE-AMT`, `CK-OVERRIDE-FROM`, `CK-OVERRIDE-EXPIRY`, mandatory `CK-OVERRIDE-REASON`.
   There is no permanent, unlimited override.
+  Limit-only exceptions require cover for `CK-EXCESS`; commercial hold overrides must also
+  cover the overdue balance and held candidate commitment (the maximum of those GBP figures).
+  Hard account/sanctions/insolvency blocks are never overridable.
 
 ---
 
@@ -252,7 +282,7 @@ AGEDDEBT ──► DUNNING ──► ar.DunningCase (stages) ──► ARDISPUT 
   * `frmCustomerEnquiry` – account, open items, ageing, activity, credit position (F5).
   * `frmReceiptEntry` – receipt entry, allocation grid, write-off tolerance, allocation correction (F6).
   * `frmCreditControl` – credit control worklist with owner, stage, promise and dispute state (F7).
-  * Simple masters (credit limits/holds, overrides, DD mandates) use `frmGenericMaint` with the
+  * Simple masters (credit limits/holds, DD mandates) use `frmGenericMaint` with the
     definitions seeded in `52-ar-menu.sql` (`AR.CREDIT`, `AR.OVERRIDE`, `AR.DDMANDATE`).
 * Menu and report rows are seeded in `db\seed\52-ar-menu.sql` (menu bar `AR`, report launcher entries
   for `AGEDDEBT`, `STATEMNT`, `DUNNING`, `ARRECON`).

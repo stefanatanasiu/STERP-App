@@ -760,12 +760,20 @@
          MOVE "BOM1440" TO PR-REASON
          MOVE SPACES TO BOM-BR-MSG
          IF VV-FIND-CNT > 0
-             STRING "Proposed revision "
-                    FUNCTION TRIM(PR-NEW-REV)
-                    " fails validation: "
-                    VV-F-MESSAGE(1)(1:60)
-                    " [" FUNCTION TRIM(VV-F-REASON(1)) "]"
-                 DELIMITED BY SIZE INTO BOM-BR-MSG
+             IF VV-FIND-CNT > 1
+                 STRING VV-F-MESSAGE(1)(1:45)
+                        " [" FUNCTION TRIM(VV-F-REASON(1)) "]; "
+                        VV-F-MESSAGE(2)(1:45)
+                        " [" FUNCTION TRIM(VV-F-REASON(2)) "]"
+                     DELIMITED BY SIZE INTO BOM-BR-MSG
+             ELSE
+                 STRING "Proposed revision "
+                        FUNCTION TRIM(PR-NEW-REV)
+                        " fails validation: "
+                        VV-F-MESSAGE(1)(1:60)
+                        " [" FUNCTION TRIM(VV-F-REASON(1)) "]"
+                     DELIMITED BY SIZE INTO BOM-BR-MSG
+             END-IF
          ELSE
              MOVE VA-MESSAGE TO BOM-BR-MSG
          END-IF

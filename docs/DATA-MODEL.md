@@ -138,8 +138,8 @@ the business logic lives in COBOL.
 | `cst.CostSet` | Standard cost sets with status and activation approval | `CompanyCode, CostSetCode` |
 | `cst.StandardCost` / `cst.StandardCostElement` | Standard cost per item and revision, split by element | `StandardCostId` / `StandardCostId, ElementCode` |
 | `cst.ItemCost` | Carrying value, average unit cost, standard, last purchase, NRV and allowance | `ItemCostId` |
-| `cst.ItemCostHistory` | Moving weighted average history, one row per recalculation | `CostHistoryId` |
-| `cst.CostLayer` | FIFO layers with original and remaining quantity, unit cost and landed adjustment | `LayerId` |
+| `cst.ItemCostHistory` | Valuation history with pool site/revision and linked stock movement; one row per recalculation | `CostHistoryId` |
+| `cst.CostLayer` | FIFO layers scoped to pool site/revision, with originating movement, original/remaining quantity and value, unit cost and landed adjustment | `LayerId` |
 | `cst.WorkCentre` | Work centres with labour, machine and overhead rates | `CompanyCode, WorkCentreCode, EffectiveFrom` |
 | `cst.Job` | Jobs and sub-jobs (two levels, D-13) with status and close dates | `CompanyCode, JobRef` |
 | `cst.JobBudget` / `cst.JobBudgetLine` | Job budgets by element and period | `JobBudgetId` / `JobBudgetLineId` |
@@ -148,6 +148,44 @@ the business logic lives in COBOL.
 | `cst.Variance` | Recorded variances by type, job and period | `VarianceId` |
 | `cst.LandedCost` / `cst.LandedCostAllocation` | Landed cost documents and their allocation to receipt lines | `LandedCostId` / `AllocationId` |
 | `cst.Impairment` | Net realisable value write-downs and their approval | `ImpairmentId` |
+
+### Stock movement valuation (GUI-028)
+
+`STKMOVE` passes the document's rounded sterling stock value to
+`inv.usp_PostStockMovement`, rather than reconstructing it from a purchase-unit or
+foreign-currency price. Receipt stock value excludes purchase-price variance;
+receipt reversals recover the original movement value. Despatch lines and COGS
+use the actual relief returned by the contract. The COBOL value remains a
+magnitude; SQL movement/history values are signed.
+
+Existing exact-site/revision pools take precedence over compatible wildcard pools.
+Approved, effective cost policy resolves site (`'*'` for company-wide) and revision
+(`''` for revisionless) dimensions when creating a pool; it does not silently migrate
+an established pool or strand its carrying value. Without a compatible pool or policy,
+a site/revision pool is created. FIFO consumes only that pool's
+oldest receipt layers; receipt reversals consume the originating receipt's layers.
+Moving average and standard pools retain approved standards and recompute average
+from carrying value. NRV allowances are recalculated, or proportionately relieved
+when no unit NRV exists, and cleared on an empty pool.
+
+Quality changes and transfers within one pool are value-neutral. Inter-site
+transfers between separate pools carry the origin's relieved value into the
+destination. Non-owned stock and unvalued opening loads do not create valuation
+pools. An issue beyond valued stock still obeys the physical-stock check, relieves
+only available pool value and raises an open CST shortfall exception; it does not
+force a reconciliation or invent the missing value.
+
+Movement, pool, layer, history and replay evidence share one transaction.
+`STKMOVE` owns an ODBC driver UOW when called alone and uses a savepoint inside a
+caller's UOW, so failed transfer/quality legs undo the entire service call.
+`RECEIPT` similarly spans its header, stock, line identity, GRNI and delivery state;
+driver autocommit ownership is queried through SQLIO `TSTA`, not inferred from a
+single MARS batch's `@@TRANCOUNT`.
+Correlation and item locks serialize concurrent retries and pool recalculations.
+Replay returns the same result shape without a second valuation. The final two
+result columns append signed `ValueGBP` and stock-unit `UnitCost`; the original ten
+columns retain their order. Deploy the costing-table extension before the posting
+procedure. `db\tests\stk-valuation.sql` covers the integration and edge cases.
 
 ## 7. `kit` — kit definition and execution (11 tables)
 
@@ -279,7 +317,7 @@ shown with `=`.
 | `fin.usp_ValidatePeriod` | `@CompanyCode, @PostingDate, @UserCode = NULL, @Action = 'POST'` | returns the period and its status; `HARD` and `FUTURE` are refused, `SOFT` needs close authority |
 | `fin.usp_PostJournal` | `@CompanyCode, @CorrelationId, @UserCode, @Description, @PostingDate, @JournalType = 'MANUAL', @DocumentDate = NULL, @CurrencyCode = 'GBP', @SourceModule = NULL, @SourceRef = NULL, @EventCode = NULL, @SeriesCode = 'JNL', @FxRate = NULL, @EvidenceRef = NULL` | lines are staged in `fin.JournalStage` under the same `@CorrelationId`; validates account status, control accounts, mandatory and forbidden dimensions, event mapping, period, balance in document currency **and** sterling; returns `JournalId, JournalNumber, CompanyCode, FiscalYear, PeriodNo, TotalDebitGBP, TotalCreditGBP, Status, WasDuplicate` |
 | `fin.usp_ReverseJournal` | `@CompanyCode, @JournalNumber, @UserCode, @Reason, @PostingDate = NULL, @ReversePct = 100, @CorrelationId = NULL, @SeriesCode = 'JNLR'` | creates a linked full or partial reversal; the original is never altered |
-| `inv.usp_PostStockMovement` | `@CompanyCode, @SiteCode, @WarehouseCode, @LocationCode, @ItemCode, @MovementType, @Quantity, @MovementDate, @UserCode, @Revision = NULL, @LotCode = NULL, @SerialNo = NULL, @OwnerType = 'OWNED', @OwnerCode = NULL, @QualityStatus = 'ACCEPTED', @Direction = NULL, @UomCode = NULL, @EnteredQuantity = NULL, @ConversionFactor = NULL, @UnitCost = NULL, @PostingDate = NULL, @SourceModule = NULL, @SourceDocType = NULL, @SourceDocRef = NULL, @SourceDocLine = NULL, @CounterpartLocationCode = NULL, @ReasonCode = NULL, @Reason = NULL, @ApprovalRef = NULL, @CorrelationId = NULL` | writes `inv.StockMovement`, updates `inv.StockBalance`; never allows a negative balance (`E-0015`), enforces lot and serial control (`E-0027`) and the quantity increment (`E-0028`) |
+| `inv.usp_PostStockMovement` | `@CompanyCode, @SiteCode, @WarehouseCode, @LocationCode, @ItemCode, @MovementType, @Quantity, @MovementDate, @UserCode, @Revision = '', @LotCode = '', @SerialNo = '', @OwnerType = 'OWNED', @OwnerCode = '', @QualityStatus = 'ACCEPTED', @Direction = NULL, @UomCode = NULL, @EnteredQuantity = NULL, @ConversionFactor = NULL, @UnitCost = NULL, @PostingDate = NULL, @SourceModule = 'ITM', @SourceDocType = NULL, @SourceDocRef = NULL, @SourceDocLine = NULL, @CounterpartLocationCode = NULL, @ReasonCode = NULL, @Reason = NULL, @ApprovalRef = NULL, @CorrelationId = NULL, @ValueGBP = NULL, @CounterpartSiteCode = NULL` | atomically writes physical balance/movement, owned valuation pool, linked history and FIFO layers; never allows negative physical stock (`E-0015`), enforces traceability (`E-0027`), increment (`E-0028`) and non-negative valuation evidence (`E-0031`) |
 
 Error numbers in use: `E-0002` unknown sign-on, `E-0004` numbering, `E-0005` void,
 `E-0006` self-approval, `E-0007` segregation of duties, `E-0008` authority, `E-0009` period,
@@ -336,4 +374,3 @@ field-level rows to `core.AuditLog`.
    `db\procs\core\usp_Ui*.sql`, `db\seed\05-core-menu-system.sql` and
    `db\seed\06-core-maintdefs.sql`. Register new screens by seeding `core.MenuItem` from your
    own module seed file.
-

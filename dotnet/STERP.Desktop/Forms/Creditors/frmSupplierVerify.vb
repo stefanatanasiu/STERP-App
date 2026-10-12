@@ -34,7 +34,9 @@ Public Class frmSupplierVerify
         AddTool("Payable?", "FIND", AddressOf PayableClicked)
         AddSeparator()
         AddTool("Bank records", "FIND", AddressOf BanksClicked)
+        AddTool("Change bank", "EDIT", AddressOf ChangeClicked)
         AddTool("CoP check", "RUN", AddressOf CopClicked)
+        AddTool("Record callback", "RUN", AddressOf CallbackClicked)
         AddTool("Approve bank", "POST", AddressOf ApproveClicked)
         AddSeparator()
     End Sub
@@ -91,12 +93,67 @@ Public Class frmSupplierVerify
 
     Private Sub CopClicked(ByVal sender As Object, ByVal e As EventArgs)
         If Not RequireBankRow() Then Return
+        Dim id As Integer = BankId()
+        Dim v As Dictionary(Of String, String) = ApInputDialog.Collect(Me, "Record Confirmation of Payee",
+            New String()() {
+                New String() {"RESULT", "Result (MATCH/CLOSEMATCH/NOMATCH/UNAVAILABLE)", "", "12"},
+                New String() {"REFERENCE", "CoP evidence reference", "", "60"},
+                New String() {"DECISION", "Authorised decision (required unless MATCH)", "", "200"}})
+        If v Is Nothing Then Return
         Guard(Sub()
-                  Dim r As CobolResult = _svc.ConfirmationOfPayee(_bankSupplier, BankId())
+                  Dim r As CobolResult = _svc.ConfirmationOfPayee(_bankSupplier, id,
+                      v("RESULT").ToUpperInvariant(), v("REFERENCE"), v("DECISION"))
                   If Not ShowResult(r) Then Return
                   SetStatus("Confirmation of Payee: " & _svc.CopResult & ". " & _svc.Note,
                             If(_svc.CopResult = "MATCH", "OK", "!  WARNING"))
                   Populate(_svc.Banks(_bankSupplier))
+              End Sub)
+    End Sub
+
+    Private Sub ChangeClicked(ByVal sender As Object, ByVal e As EventArgs)
+        Dim code As String = Chosen()
+        If code = "" Then Return
+        Dim v As Dictionary(Of String, String) = ApInputDialog.Collect(Me, "Prepare GB / GBP Bacs bank change",
+            New String()() {
+                New String() {"BANKREF", "New unique bank reference (maximum 10 characters)", "", "10"},
+                New String() {"BENEFICIARY", "Beneficiary name", "", "120"},
+                New String() {"SORTCODE", "Sort code (six digits)", "", "6"},
+                New String() {"ACCOUNT", "Account number (eight digits)", "", "8"},
+                New String() {"BANKNAME", "Bank name", "", "60"},
+                New String() {"SOURCE", "Request source (EMAIL/PORTAL/LETTER/CALLBACK)", "", "30"}})
+        If v Is Nothing Then Return
+        Guard(Sub()
+                  Dim r As CobolResult = _svc.PrepareBank(code, v("BANKREF").ToUpperInvariant(),
+                      v("BENEFICIARY"), v("SORTCODE"), v("ACCOUNT"), v("BANKNAME"),
+                      v("SOURCE").ToUpperInvariant())
+                  If Not ShowResult(r) Then Return
+                  _bankSupplier = code
+                  _showingBanks = True
+                  Populate(_svc.Banks(code))
+                  SetStatus("Bank change " & _svc.BankId & " is " & _svc.BankStatus &
+                            ". Record CoP and an independent callback, then obtain independent approval.",
+                            "!  PENDING")
+              End Sub)
+    End Sub
+
+    Private Sub CallbackClicked(ByVal sender As Object, ByVal e As EventArgs)
+        If Not RequireBankRow() Then Return
+        Dim id As Integer = BankId()
+        Dim v As Dictionary(Of String, String) = ApInputDialog.Collect(Me, "Record independent callback",
+            New String()() {
+                New String() {"CONTACT", "Contact already held on record (not change request)", "", "120"},
+                New String() {"ONFILE", "Contact was already on file? Enter Y or N", "", "1"},
+                New String() {"NOTE", "Independent callback evidence / outcome", "", "300"}})
+        If v Is Nothing Then Return
+        If Not Confirm("Record an independent callback by " & SterpSession.Current.UserCode &
+                       "? Do not use a contact supplied with the change request.") Then Return
+        Guard(Sub()
+                  Dim r As CobolResult = _svc.RecordCallback(_bankSupplier, id, v("CONTACT"),
+                      v("ONFILE").ToUpperInvariant() = "Y", v("NOTE"))
+                  If Not ShowResult(r) Then Return
+                  Populate(_svc.Banks(_bankSupplier))
+                  SetStatus("Callback recorded; bank status " & _svc.BankStatus &
+                            ". Independent approval is still required.", "OK")
               End Sub)
     End Sub
 
@@ -144,4 +201,57 @@ Public Class frmSupplierVerify
         Return _txtSupplier.Text.Trim().ToUpperInvariant()
     End Function
 
+End Class
+
+''' <summary>Small keyed capture dialog shared by the two purchase-ledger list screens.</summary>
+Friend NotInheritable Class ApInputDialog
+    Public Shared Function Collect(ByVal owner As Form, ByVal title As String,
+                                   ByVal fields As String()()) As Dictionary(Of String, String)
+        Using dialog As New Form()
+            dialog.Text = title
+            dialog.FormBorderStyle = FormBorderStyle.FixedDialog
+            dialog.StartPosition = FormStartPosition.CenterParent
+            dialog.MinimizeBox = False
+            dialog.MaximizeBox = False
+            dialog.ClientSize = New Size(710, fields.Length * 30 + 55)
+            Dim edits As New Dictionary(Of String, TextBox)
+            Dim y As Integer = 12
+            For Each field As String() In fields
+                UiStyle.Caption(dialog, field(1) & ":", 10, y, 370)
+                Dim edit As TextBox = UiStyle.Edit(dialog, 390, y, 305)
+                edit.Name = field(0)
+                edit.MaxLength = Integer.Parse(field(3))
+                edit.Text = field(2)
+                edits(field(0)) = edit
+                y += 30
+            Next
+            Dim ok As Button = UiStyle.Push(dialog, "&OK", 500, y + 5, 90)
+            ok.DialogResult = DialogResult.OK
+            Dim cancel As Button = UiStyle.Push(dialog, "&Cancel", 600, y + 5, 90)
+            cancel.DialogResult = DialogResult.Cancel
+            dialog.AcceptButton = ok
+            dialog.CancelButton = cancel
+            If dialog.ShowDialog(owner) <> DialogResult.OK Then Return Nothing
+            Dim values As New Dictionary(Of String, String)
+            For Each entry As KeyValuePair(Of String, TextBox) In edits
+                values(entry.Key) = entry.Value.Text.Trim()
+            Next
+            Dim invalid As String = WidthError(fields, values)
+            If invalid <> "" Then
+                MessageBox.Show(owner, invalid, "STERP - Input", MessageBoxButtons.OK, MessageBoxIcon.Error)
+                Return Nothing
+            End If
+            Return values
+        End Using
+    End Function
+
+    Friend Shared Function WidthError(ByVal fields As String()(),
+                                     ByVal values As Dictionary(Of String, String)) As String
+        For Each field As String() In fields
+            If values(field(0)).Length > Integer.Parse(field(3)) Then
+                Return field(0) & " must be at most " & field(3) & " characters. Nothing was recorded."
+            End If
+        Next
+        Return ""
+    End Function
 End Class

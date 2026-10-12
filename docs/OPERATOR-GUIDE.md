@@ -55,6 +55,10 @@ Without it, type the equivalent commands in `OPTION ===>`: `X` (F3), `-` or `P` 
 `run\logs\OPS-<program>-<stamp>.log`. The console then shows the completion code and the spool
 file recorded in `core.JobRun`.
 
+Completion is displayed in a stable native screen panel. The Windows Jobs status filter
+uses the register's actual states: RUNNING, OK, WARNING, FAILED and ABENDED. Select the
+stream's **View spool** to read its SYSOUT fallback, or a report step to read its report.
+
 ---
 
 ## 2. Job streams
@@ -69,6 +73,13 @@ jobs\PAYRUN.cmd   CO=STC RUN=PP-26-0007 USER=APMGR
 
 Parameters are unquoted `KEY=VALUE` pairs. `MODE=PREVIEW` (the default) changes nothing — always
 run a preview first and keep its SYSOUT with the night's paperwork.
+
+Both normal and failure exits preserve the stream's exact maximum condition code.
+PREVIEW still creates run/log/spool records, but does not post the financial operations.
+For an isolated runtime, explicitly set `STERP_HOME`, `STERP_SQLSERVER` and
+`STERP_DATABASE` before starting STERPOPS: SETENV reconstructs ODBC from that SQL target.
+The desktop launcher supplies the server/database from the selected application profile,
+not inherited shell defaults; standalone report inputs resolve from the application root.
 
 **The nightly cycle.** `NIGHTLY` every working night. `STMTS` and `DDCOLL` on their calendar
 days. `MONTHEND` after the last nightly of the period and before the period is soft closed.

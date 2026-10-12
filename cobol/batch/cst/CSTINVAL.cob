@@ -309,7 +309,12 @@
            MOVE WS-USER TO CA-USER OF WS-JOBLOG
            MOVE "CSTINVAL" TO JL-JOB-NAME
            MOVE CM-COMMAND-LINE TO JL-ARGUMENTS
-           CALL "JOBLOG" USING WS-JOBLOG.
+           CALL "JOBLOG" USING WS-JOBLOG
+           IF CA-RETURN-CODE OF WS-JOBLOG > 4
+               MOVE CA-RETURN-CODE OF WS-JOBLOG TO WS-RC
+               DISPLAY "STERP-E-0201 "
+                   CA-MESSAGE OF WS-JOBLOG
+           END-IF.
        0200-EXIT.
            EXIT.
 
@@ -644,7 +649,9 @@
 
        0500-JOB-END SECTION.
        0500-START.
-           INITIALIZE WS-JOBLOG
+           IF JL-JOB-RUN-ID <= 0
+               GO TO 0500-EXIT
+           END-IF
            MOVE "END" TO CA-FUNCTION OF WS-JOBLOG
            MOVE WS-CO TO CA-COMPANY OF WS-JOBLOG
            MOVE WS-USER TO CA-USER OF WS-JOBLOG
@@ -652,11 +659,20 @@
            IF WS-RC > 4
                MOVE "FAILED" TO JL-STATUS
            ELSE
-               MOVE "COMPLETE" TO JL-STATUS
+               IF WS-RC = 0
+                   MOVE "COMPLETE" TO JL-STATUS
+               ELSE
+                   MOVE "WARNING" TO JL-STATUS
+               END-IF
            END-IF
            MOVE WS-RC TO JL-RETURN-CODE
            MOVE WS-ROWS-OUT TO JL-ROWS-PROCESSED
            MOVE WS-SPOOL-NAME TO JL-SPOOL-FILE
-           CALL "JOBLOG" USING WS-JOBLOG.
+           CALL "JOBLOG" USING WS-JOBLOG
+           IF CA-RETURN-CODE OF WS-JOBLOG > 4
+               MOVE CA-RETURN-CODE OF WS-JOBLOG TO WS-RC
+               DISPLAY "STERP-E-0501 "
+                   CA-MESSAGE OF WS-JOBLOG
+           END-IF.
        0500-EXIT.
            EXIT.

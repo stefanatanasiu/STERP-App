@@ -11,6 +11,99 @@ Purchase Ledger. Ported from MVS in 1991, so the COBOL dialect is **IBM Enterpri
 
 ---
 
+## Desktop payment preparation
+
+Supplier Verification now offers **Change bank** (GB/GBP Bacs): key a new unique bank reference,
+beneficiary, six-digit sort code, eight-digit account, bank name and request source.
+The bank reference is at most **10 characters**; overlength values are refused by the
+dialog and facade before calling the engine, rather than truncated into a different key.
+`APBANKVR PREPARE` creates a **PENDING** record superseding the current destination only
+after approval, never an immediately usable destination.
+**CoP check** records the result, evidence reference and authorised decision (mandatory for
+anything other than MATCH). **Record callback** requires the pre-existing contact source,
+an explicit Y/N on-file declaration and the independent callback evidence. Obtain an
+independent **Approve bank** decision afterwards. Maintenance, verification and approval
+retain `AP.BANK.MAINT`, `AP.BANK.VERIFY` and `AP.BANK.APPROVE`; APCLERK has no bank-maintenance
+grant. Use separate authorised people for change preparation and callback: the seeded
+SYSADM may record CoP/callback after APMGR prepares the change, without extra grants;
+TREASURY still makes the bank approval decision.
+
+Payment Run offers **Build proposal**: cutoff/payment dates (`dd/MM/yyyy`), method and
+company bank account (for example BACS / GBP1). APPAYPRP assigns the new proposal reference;
+the screen displays that returned reference. This is the APPAYPRP SELECT
+preview; **Reserve** uses its existing header/dates and APPAYPRP RESERVE before
+**Request approval**. **Release reservations** frees the reservation; it is not authority
+to transmit a payment. APCLERK prepares, then TREASURY and TREASURY2 independently approve
+the exact content; preparer/self/duplicate approval refusals remain engine errors.
+**Create instructions** retains APPAYRUN controls. **Bacs file** opens the existing APBACS
+report launcher with RUN populated and the signed-on USER passed to the batch program.
+Run produces the local Standard 18 file under `run\bacs`, not an external transmission.
+The report and instruction operations still require `AP.PAYMENT.RELEASE`.
+The Creditors menu has three permission-specific routes to the same payment form:
+**Payment Proposal and Run** (`AP.PAYMENT.PROPOSE`), **Authorise Payment Run**
+(`AP.PAYMENT.APPROVE`) and **Release Payment Run** (`AP.PAYMENT.RELEASE`).
+Reapply `db\seed\61-ap-menu.sql` to deploy these routes; no role grants change and opening
+the form does not confer authority for any of its actions.
+**Approve Supplier Bank Changes** similarly reaches Supplier Verification using
+`AP.BANK.APPROVE`, so treasury need not acquire supplier-maintenance/view rights to
+approve independently verified bank changes.
+
+### Normal demo baseline: a fresh interactive run
+
+`APDEMO MODE=COMMIT` now leaves one STC/S0002 utility invoice **after** its example
+released proposal: supplier reference `APDEMO-GUI-UTILITY-2026`, gross GBP 148.14.
+Deploy `db\procs\ap\usp_ReserveProposal.sql` as well: credit-only suppliers are listed
+as exclusions rather than subtracting their credits from another supplier's cash
+requirement. This keeps the approved outflow equal to the fresh S0002 instruction.
+APINVREG validates the allowed UTILITIES non-PO category; matching is legitimately
+NOTREQUIRED. APPOST posts expense 6800/ADMIN, recoverable VAT 1250 and creditors 2000;
+APMGR releases the invoice block through APBLOCK. The original payment reservations
+are not released, changed or reused. Re-running APDEMO reuses the register/journal and
+does not replenish a payable already selected by an interactive run.
+
+Rebuild the AP batch programs, then run the normal `build\demo-data.ps1` preparation
+against the intended isolated demo database (or re-run APDEMO COMMIT after an existing
+baseline). In Payment Run, APCLERK uses **Build proposal**, cutoff `30/11/2026`,
+payment date `02/12/2026`, method BACS, company bank GBP1; keep the returned PPS reference.
+Reserve, request approval, obtain distinct TREASURY/TREASURY2 signatures, create
+instructions, then **Bacs file / Run** under TREASURY. The due date comes from S0002's
+N45 terms; the native Bacs calendar owns processing dates. The local file does not
+transmit a payment. `ApDemoFixtureTests` checks normal-baseline reconciliation,
+idempotency and this separate payment/Bacs route in its dedicated AP demo test database.
+
+### Local Bacs Standard 18 layout
+
+APBACS emits the single-processing-day variant: VOL1, HDR1, HDR2, UHL1,
+one 100-byte credit record per payee, one 100-byte debit contra, EOF1, EOF2,
+then UTL1. Every label is exactly 80 bytes, including trailing spaces, and
+every physical record ends in CRLF. HDR2 declares `00100`; there is no
+multi-day date appended to data. UHL1 contains the native-calendar processing
+day (the banking day **before** value date), not the input/submission date.
+The catalogue/launcher prompts only for CO and RUN. There is deliberately no
+ENTRYDATE override: the approved run's stored PayDate is authoritative.
+The launcher supplies USER from the signed-on session, not an editable prompt.
+Reapply `db\seed\61-ap-menu.sql` to refresh existing catalogue definitions.
+
+For the £148.14 utility payment, lengths are
+`80,80,80,80,100,100,80,80,80` (778 bytes including CRLF). Both data amounts
+are `00000014814` at columns 36–46. UTL1 has 13-digit debit total at columns
+5–17, equal credit total at 18–30, debit count `0000001` at 31–37, and
+credit count at 38–44. A multi-payee file still has **one** debit contra,
+not one debit per credit.
+
+`ApBacsFormatTests.Standard18PhysicalRecords` validates actual native bytes,
+field positions, label order, dates, padding, balanced amounts and asymmetric
+multi-payee counts using PREVIEW in an isolated AP demo database; it checks
+that instruction statuses/file references remain unchanged. No transmission
+is performed. The format reference is the
+[HSBC Standard 18 implementation guide](https://www.hsbcnet.com/-/media/hsbcnet/client-transition/bacs-standard-18-mig-feb-2022.pdf),
+pages 2–5 and 10–11. Sponsor-specific bank acceptance is not implied.
+Native APBACS retains its START run ID through END: normal completion is OK/0,
+reproduction is WARNING/4, and failures are FAILED. JOBLOG failures are explicit
+`STERP-E-0201`/`STERP-E-0501` errors, not ignored successes. The format regression
+also verifies both launcher/native runs are ended with matching severity and the
+native file/spool references. Existing historical RUNNING rows are not repaired.
+
 ## 1. Interfaces other teams need (read this first)
 
 ### 1.1 MATCH3W – three-way matching (`APMATCH`, copybook `APMATCHCA.cpy`)

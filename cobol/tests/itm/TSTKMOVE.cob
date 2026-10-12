@@ -18,7 +18,10 @@
        DATA DIVISION.
        WORKING-STORAGE SECTION.
        COPY TESTKITW.
+       COPY SQLIOCA.
        COPY STKMOVECA REPLACING ==DFHCOMMAREA== BY ==WS-SM==.
+       01  WS-PROBE                    PIC X(60).
+       01  WS-RECEIPT-ID               PIC S9(17).
        01  WS-PLAIN-ITEM               PIC X(40)
                VALUE "LINK-QUICK-11S".
        01  WS-LOT-ITEM                 PIC X(40)
@@ -38,6 +41,7 @@
            PERFORM 1700-HOLD-NEEDS-QUANTITY
            PERFORM 1800-ADJUST-NEEDS-REASON
            PERFORM 1900-BAD-FUNCTION
+           PERFORM 2000-VALUED-MOVEMENTS
 
            PERFORM TK-END
            STOP RUN.
@@ -271,5 +275,115 @@
            MOVE 20261005 TO SM-MOVEMENT-DATE
            MOVE 20261005 TO SM-POSTING-DATE
            MOVE "ITM" TO SM-SOURCE-MODULE.
+
+      *>   GUI-028: actual calls prove the extended SQL parameter and
+      *>   result layouts; the transaction leaves no stock or costs.
+       2000-VALUED-MOVEMENTS.
+           MOVE "BEGN" TO SQLIO-FUNC
+           MOVE 0 TO SQLIO-PARM-CNT SQLIO-COL-CNT
+           MOVE 7 TO SQLIO-CURSOR
+           CALL "SQLIO" USING SQLIO-CA WS-PROBE
+           IF SQLIO-SQLCODE < 0
+               MOVE "valued movement transaction opens" TO TK-NAME
+               MOVE SQLIO-ERRMSG TO TK-DETAIL
+               PERFORM TK-FAIL
+               EXIT PARAGRAPH
+           END-IF
+           MOVE SPACES TO SQLIO-STMT
+           STRING "INSERT inv.Item (CompanyCode, ItemCode, "
+                  "Description, ItemClass, StockUomCode, QuantumQty, "
+                  "IsIndivisible, TraceabilityType, MakeBuy, "
+                  "ValuationGroup, CostMethod, LifecycleStatus, "
+                  "CreatedBy) VALUES ('STC','ZZ-SMVAL','Valuation', "
+                  "'BOUGHT','EA',1,1,'NONE','BUY','ZZSM','MWA', "
+                  "'RELEASED','TEST')"
+               DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE "EXEC" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-PROBE
+           MOVE "CLOS" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-PROBE
+           PERFORM 9000-RESET
+           MOVE "RECEIPT" TO CA-FUNCTION OF WS-SM
+           MOVE "ZZ-SMVAL-RPL" TO CA-CORRELATION-ID OF WS-SM
+           MOVE "ZZ-SMVAL" TO SM-ITEM-CODE SM-SOURCE-DOC-REF
+           MOVE "STKA01" TO SM-LOCATION
+           MOVE "GOODSRECEIPT" TO SM-SOURCE-DOC-TYPE
+           MOVE 36 TO SM-QUANTITY
+           MOVE 2.314167 TO SM-UNIT-COST
+           MOVE 83.33 TO SM-VALUE-GBP
+           CALL "STKMOVE" USING WS-SM
+           MOVE "receipt carries the rounded document GBP evidence"
+               TO TK-NAME
+           IF CA-RETURN-CODE OF WS-SM < 8
+              AND SM-MOVEMENT-ID > 0 AND SM-VALUE-GBP = 83.33
+              AND SM-UNIT-COST = 2.314167
+               PERFORM TK-PASS
+           ELSE
+               MOVE CA-MESSAGE OF WS-SM TO TK-DETAIL
+               PERFORM TK-FAIL
+           END-IF
+           MOVE SM-MOVEMENT-ID TO WS-RECEIPT-ID
+           CALL "STKMOVE" USING WS-SM
+           MOVE "native replay reads the duplicate in column ten"
+               TO TK-NAME
+           IF SM-DUPLICATE = "Y"
+              AND SM-MOVEMENT-ID = WS-RECEIPT-ID
+              AND SM-QTY-AFTER = 36 AND SM-VALUE-GBP = 83.33
+               PERFORM TK-PASS
+           ELSE
+               MOVE CA-MESSAGE OF WS-SM TO TK-DETAIL
+               PERFORM TK-FAIL
+           END-IF
+           PERFORM 9000-RESET
+           MOVE "TRANSFER" TO CA-FUNCTION OF WS-SM
+           MOVE "ZZ-SMVAL" TO SM-ITEM-CODE
+           MOVE "STKA01" TO SM-LOCATION SM-TO-LOCATION
+           MOVE "BHM" TO SM-TO-SITE
+           MOVE "MAIN" TO SM-TO-WAREHOUSE
+           MOVE 6 TO SM-QUANTITY
+           CALL "STKMOVE" USING WS-SM
+           MOVE "native inter-site transfer carries origin relief"
+               TO TK-NAME
+           IF CA-RETURN-CODE OF WS-SM < 8
+              AND SM-MOVEMENT-ID > 0 AND SM-MOVEMENT-ID-2 > 0
+              AND SM-VALUE-GBP = 13.89 AND SM-QTY-AFTER = 6
+               PERFORM TK-PASS
+           ELSE
+               MOVE CA-MESSAGE OF WS-SM TO TK-DETAIL
+               PERFORM TK-FAIL
+           END-IF
+           PERFORM 9000-RESET
+           MOVE "ISSUE" TO CA-FUNCTION OF WS-SM
+           MOVE "ZZ-SMVAL" TO SM-ITEM-CODE
+           MOVE "STKA01" TO SM-LOCATION
+           MOVE 30 TO SM-QUANTITY
+           CALL "STKMOVE" USING WS-SM
+           MOVE "unpriced native issue returns actual pool relief"
+               TO TK-NAME
+           IF CA-RETURN-CODE OF WS-SM < 8
+              AND SM-QTY-AFTER = 0 AND SM-VALUE-GBP = 69.44
+              AND SM-UNIT-COST = 2.314667
+               PERFORM TK-PASS
+           ELSE
+               MOVE CA-MESSAGE OF WS-SM TO TK-DETAIL
+               PERFORM TK-FAIL
+           END-IF
+           MOVE SPACES TO SQLIO-STMT
+           STRING "SELECT CAST(COUNT(*) AS varchar(30)) FROM "
+                  "cst.ItemCostHistory WHERE CompanyCode = 'STC' "
+                  "AND ItemCode = 'ZZ-SMVAL' AND SiteCode = 'RDG'"
+               DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE 1 TO SQLIO-COL-CNT
+           MOVE 60 TO SQLIO-COL-WIDTH(1)
+           MOVE "SNGL" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-PROBE
+           MOVE "native movements create site-scoped pool histories"
+               TO TK-NAME
+           MOVE 3 TO TK-EXPECTED-N
+           COMPUTE TK-ACTUAL-N = FUNCTION NUMVAL(WS-PROBE)
+           PERFORM TK-ASSERT-NUM
+           MOVE 0 TO SQLIO-COL-CNT
+           MOVE "ROLB" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-PROBE.
 
        COPY TESTKITP.

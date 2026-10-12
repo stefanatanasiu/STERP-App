@@ -87,6 +87,38 @@ Public Class DebtorsService
         Return Link("CREDCHK", ca, "CHECK", Session.NewCorrelationId())
     End Function
 
+    Public Function CreditOverrides(Optional ByVal requestsOnly As Boolean = False) As DataTable
+        Return STERP.Data.SqlHelper.ExecuteDataTable(
+            "SELECT OverrideId, CustomerCode, Scope, DocumentRef, OverrideAmountGBP, Reason, " &
+            "RequestedBy, ApprovedBy, ValidFrom, ExpiresOn, Status FROM ar.CreditOverride " &
+            "WHERE CompanyCode = @CompanyCode AND (@RequestsOnly = 0 OR RequestedBy = @UserCode) " &
+            "ORDER BY OverrideId DESC", "@CompanyCode", Company, "@RequestsOnly", requestsOnly, "@UserCode", User)
+    End Function
+
+    Public Function RequestCreditOverride(ByVal customer As String, ByVal documentRef As String,
+                                          ByVal amountGBP As Decimal, ByVal reason As String) As CobolResult
+        Dim ca As CommArea = NewArea("CREDCHKCA")
+        ca.SetString("CK-CUSTOMER", customer)
+        ca.SetString("CK-CHECK-POINT", "ORDER")
+        ca.SetString("CK-DOCUMENT-REF", documentRef)
+        ca.SetString("CK-CURRENCY", "GBP")
+        ca.SetString("CK-EVAL-DATE", Fmt.Yyyymmdd(Session.BusinessDate))
+        ca.SetString("CK-OVERRIDE-SCOPE", "ORDER")
+        ca.SetDecimal("CK-OVERRIDE-AMT", amountGBP)
+        ca.SetString("CK-OVERRIDE-REASON", reason)
+        Area = ca
+        Return Link("CREDCHK", ca, "OVERRIDE", Session.NewCorrelationId())
+    End Function
+
+    Public Function ApproveCreditOverride(ByVal customer As String, ByVal overrideId As Integer) As CobolResult
+        Dim ca As CommArea = NewArea("CREDCHKCA")
+        ca.SetString("CK-CUSTOMER", customer)
+        ca.SetString("CK-EVAL-DATE", Fmt.Yyyymmdd(Session.BusinessDate))
+        ca.SetInt("CK-OVERRIDE-ID", overrideId)
+        Area = ca
+        Return Link("CREDCHK", ca, "APPROVE", Session.NewCorrelationId())
+    End Function
+
     ''' <summary>Builds the RCPTALOC COMMAREA for one receipt header; nothing is committed
     ''' until the caller links with RECEIPT (AR-009).</summary>
     Public Function NewReceipt(ByVal customer As String, ByVal receiptDate As Date, ByVal currencyCode As String,

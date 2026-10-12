@@ -23,3 +23,26 @@ IF OBJECT_ID(N'cst.CostLayer') IS NULL CREATE TABLE cst.CostLayer (
   LandedAdjustmentGBP decimal(18,2) NOT NULL CONSTRAINT DF_Lay_La DEFAULT 0, IsClosed bit NOT NULL CONSTRAINT DF_Lay_Cl DEFAULT 0, CreatedAt datetime2(3) NOT NULL CONSTRAINT DF_Lay_CA DEFAULT SYSDATETIME(), RowVer rowversion,
   CONSTRAINT UQ_CostLayer UNIQUE (CompanyCode, ItemCode, Revision, LayerSeq));
 GO
+/* Legacy layers without movement evidence remain company-wide. Sequence numbers are retained. */
+IF COL_LENGTH('cst.ItemCostHistory', 'SiteCode') IS NULL
+    ALTER TABLE cst.ItemCostHistory ADD SiteCode varchar(10) NOT NULL CONSTRAINT DF_ItmCH_Site DEFAULT '*';
+GO
+IF COL_LENGTH('cst.CostLayer', 'SiteCode') IS NULL
+    ALTER TABLE cst.CostLayer ADD SiteCode varchar(10) NOT NULL CONSTRAINT DF_Lay_Site DEFAULT '*';
+GO
+UPDATE l SET SiteCode = p.SiteCode
+  FROM cst.CostLayer l JOIN inv.StockMovement m ON m.MovementId = l.MovementId
+  JOIN cst.ItemCost p ON p.CompanyCode = l.CompanyCode AND p.ItemCode = l.ItemCode AND p.Revision = l.Revision
+    AND p.SiteCode = m.SiteCode
+ WHERE l.SiteCode = '*'
+   AND NOT EXISTS (SELECT 1 FROM cst.ItemCost w WHERE w.CompanyCode = l.CompanyCode AND w.ItemCode = l.ItemCode
+                   AND w.Revision = l.Revision AND w.SiteCode = '*');
+GO
+/* Unlinked legacy layers can be assigned only when their pool is unambiguous. */
+UPDATE l SET SiteCode = p.SiteCode
+  FROM cst.CostLayer l JOIN cst.ItemCost p ON p.CompanyCode = l.CompanyCode AND p.ItemCode = l.ItemCode
+   AND p.Revision = l.Revision
+ WHERE l.SiteCode = '*' AND l.MovementId IS NULL AND p.SiteCode <> '*'
+   AND NOT EXISTS (SELECT 1 FROM cst.ItemCost other WHERE other.CompanyCode = p.CompanyCode
+                    AND other.ItemCode = p.ItemCode AND other.Revision = p.Revision AND other.SiteCode <> p.SiteCode);
+GO

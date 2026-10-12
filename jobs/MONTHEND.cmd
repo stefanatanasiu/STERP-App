@@ -84,8 +84,8 @@ goto EOJ
 echo //*  STREAM TERMINATED BY COND CODE %LASTCC%>> "%SYSOUT%"
 echo //*  CORRECT THE FAULT AND RESTART AT THE FAILING STEP>> "%SYSOUT%"
 call "%~dp0JOBEND.cmd" %MAXCC%
-endlocal & exit /b 8
+endlocal & exit /b %MAXCC%
 
 :EOJ
 call "%~dp0JOBEND.cmd" %MAXCC%
-endlocal & exit /b 0
+endlocal & exit /b %MAXCC%

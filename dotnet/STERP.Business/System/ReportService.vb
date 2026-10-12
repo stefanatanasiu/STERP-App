@@ -102,6 +102,13 @@ Public Class ReportService
         rr.ProgramName = programName.Trim().ToUpperInvariant()
 
         Dim job As Boolean = IsJobStream(reportCode)
+        Dim sql As System.Data.SqlClient.SqlConnectionStringBuilder = Nothing
+        If job Then
+            sql = New System.Data.SqlClient.SqlConnectionStringBuilder(SterpConfig.SqlConnectionString)
+            If String.IsNullOrWhiteSpace(sql.DataSource) OrElse String.IsNullOrWhiteSpace(sql.InitialCatalog) Then
+                Throw New InvalidOperationException("Job streams require an explicit SQL server and database in the application profile.")
+            End If
+        End If
         Dim exe As String = If(job, JobStream(rr.ProgramName),
                                     Path.Combine(SterpConfig.BinDir, rr.ProgramName & ".exe"))
         Dim cmd As String = BuildArguments(args)
@@ -121,7 +128,7 @@ Public Class ReportService
             psi.WorkingDirectory = HomeDir()
         Else
             psi = New ProcessStartInfo(exe, cmd)
-            psi.WorkingDirectory = SterpConfig.BinDir
+            psi.WorkingDirectory = HomeDir()
         End If
         psi.UseShellExecute = False
         psi.RedirectStandardOutput = True
@@ -129,6 +136,11 @@ Public Class ReportService
         psi.CreateNoWindow = True
         psi.EnvironmentVariables("STERP_RUN") = SterpConfig.RunDir
         psi.EnvironmentVariables("STERP_ODBC") = SterpConfig.OdbcConnectionString
+        If job Then
+            psi.EnvironmentVariables("STERP_HOME") = HomeDir()
+            psi.EnvironmentVariables("STERP_SQLSERVER") = sql.DataSource
+            psi.EnvironmentVariables("STERP_DATABASE") = sql.InitialCatalog
+        End If
 
         Dim text As New Text.StringBuilder()
         SterpLog.Info("RUN " & rr.ProgramName & " " & cmd)

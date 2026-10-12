@@ -2,6 +2,19 @@
 
 Test started: 8 October 2026.
 
+## Latest status - 12 October 2026, CE9FD514
+
+Historical "Open"/"pending" wording below records the state of the earlier
+runs, not an instruction to erase or replay their failed postings. The current
+repair table and final-source evidence at the end of this ledger supersede it.
+GUI-028 through GUI-054 have repaired-path verification; earlier GUI-012-027
+repairs remain covered by their recorded retests and current GUI regressions.
+**All six documented workflows now have actual GUI execution evidence.**
+The last missing engineering-change preview/refusal is executed, not omitted.
+There are no outstanding application defects identified in this QA scope.
+Bank/cut-over fixture differences and blocked close remain explicit passing
+controls, not claims of a clean financial close or production readiness.
+
 ## Scope and method
 
 Start with all six stories in [DEMO-WORKFLOWS.md](DEMO-WORKFLOWS.md), then extend
@@ -434,3 +447,111 @@ under the runtime's `evidence` directory.
 
 Six complete workflow results and GUI-028 repair evidence will be recorded
 after execution; successful preliminary enquiries are not end-to-end coverage.
+
+## Six-workflow repair and native GUI continuation - 12 October 2026, CE9FD514
+
+**Completed, including the final source baseline and GUI-054 evidence below.** This continuation uses
+`STERP_QA_GUI_20261012_CE9FD514` and
+`run\work\functional-qa-20261012-ce9fd514`, independently source-deployed and
+prepared with all five demo drivers. The original database and shared SQL Agent
+jobs are untouched. Initial demo control bridges precede GUI transactions only;
+they are not rerun to conceal posting differences. No external payment or tax
+service is contacted.
+
+Native GUI evidence initially uses Windows UI Automation. Because desktop/DPI
+and accessibility/modal invocation made that instrumentation unreliable, the
+continuation also uses a local x86 WinForms event host invoking the application's
+actual startup, sign-on, menus, buttons, editable controls and native key/dialog
+messages. It records real form/control/grid snapshots and native form images.
+It does not substitute direct business-service calls for GUI actions.
+
+| ID | Reproduction and expected result | Repair / evidence | State |
+|---|---|---|---|
+| GUI-028 | Earlier despatch/receipt movements did not update the costing pools used by reconciliation; failed inventory difference 1,932.10 is preserved. | Shared posting maintains compatible site/revision/method pools, FIFO layers, linked one-per-movement history and atomic replay/rollback. Native/SQL suites pass; fresh real GUI frame/tyre/receipt movements 37-39 have exact history/value/journal relief, and final STC INVENTORY agrees without any post-transaction bridge. | Fixed / verified |
+| GUI-029 | Invalid despatch date `32/10/2026` must be rejected before confirmation, not replaced by the business date. | Existing source fix reproduced successfully in the isolated native GUI; valid 12 October despatch also posted. Despatch-date regression passes. | Fixed / verified |
+| GUI-030 | Filtering generic bill-header maintenance to one row must synchronize selection/editor mode; refresh from ADD must return to the selected row. | Existing selection fix verified in native maintenance and managed GUI regression. | Fixed / verified |
+| GUI-031 | New bill header raised `STERP-E-9999` / `FormatException` because absent date defaults were converted from an empty string. | Blank date defaults now mean an unset date. Native New/refresh and date-default regression pass. | Fixed / verified |
+| GUI-032 | Saving a released bill description failed with numeric conversion before reaching the immutable-revision control: optional numeric NULLs were sent as empty strings. | Blank optional numeric editors preserve NULL; empty CODE/TEXT and explicit zero remain unchanged. GUI regressions pass; actual header edit now reaches and is refused by BOM0413. | Fixed / verified |
+| GUI-033 | PURMGR approved `PO00000002` through Approvals Inbox. Approval 1 became APPROVED, but the actual purchase-order header remained AWAITAPPROVAL with no ApprovedBy (`host004-manager-approved`, `po-header-before-fix.txt`). | Matching-hash decision synchronization is atomic; three SQL regressions pass (approve/reject/stale). Fresh actual inbox decision produces APPROVED/PURMGR (`final007`); before-fix header retained. | Fixed / verified |
+| GUI-034 | WHSE's PO00000004 F10 failed COMMIT without BEGIN, leaving a DRAFT/zero-GRNI/NULL-FK receipt and movement 98 (`host007`, preserved). | MARS-aware driver transaction state and document-wide receipt UOW repair; TPRCVTX has 18 success/reconnect/early-/late-rollback assertions, inventory suite 435 native + 186 SQL assertions. Fresh real F10 yields CONFIRMED, exact line FK/40 accepted/410.83 valuation and GRNI/FULLRECEIVED (`final008`-`final010`). | Fixed / verified |
+| GUI-035 | Supplier Verification/payment forms lacked complete bank evidence/build/reserve/local-file actions and treasury menu reachability. | Permission-preserving actions/aliases implemented. Actual APMGR/SYSADM/TREASURY bank sequence and APCLERK/TREASURY/TREASURY2 payment/authorisation/instructions/local-file sequence verified in final native GUI; no rights widened. | Fixed / verified |
+| GUI-036 | After GUI-032 was repaired, generic maintenance successfully changed the description of RELEASED BK-COMMUTE-M/A instead of refusing it. The existing immutable trigger covered component changes, not header content. | Added header-content freeze with NULL-safe comparisons, preserving audit-only updates and normal supersession/effectivity closure. Six new SQL assertions and all 13 existing release regressions pass. Native second edit refused E-BOM0413. | Fixed / verified |
+| GUI-037 | A BACKWARD enquiry for KIT0001007 with no item returned other kits' RETURN/SCRAP dispositions as a successful trace (`host011-genealogy-backward`). | Supplementary dispositions now honor the keyed kit scope. Native regression (13 assertions) and GUI unknown-kit refusal pass. Actual completed KIT00001001 forward/backward trace each returns the correct two consumption rows. | Fixed / verified |
+| GUI-038 | Cost-set Impact retained FY2027STD but showed blank lifecycle/preparer/approver (`host018`). | Native IMPACT reads actual metadata/refuses unknown sets; 46 targeted assertions pass. Fresh actual GUI shows REVIEW/KWATSON/no approver, seven items/16,094.69 (`final037`). | Fixed / verified |
+| GUI-039 | Generic Credit Overrides maintenance could not request/independently approve native scoped authority. | Dedicated request/approve routes preserve existing permissions, commercial-overdue override semantics and sanctions/insolvency hard blocks. 56 native/13 debtor-credit assertions pass; actual SALESREP -> CREDMGR -> SALESREP normal release verified (`final042`-`final044`). | Fixed / verified |
+| GUI-040 | SOC900003 lacked InvoiceCustomerCode; prior acceptance refused SOA0002 after override. | Exact fixture repair in source seed, no mandatory-field bypass. Fresh source-only deployment accepts/releases normally with K0004 invoice customer and no hold (`final044`), no manual repair to final data. | Fixed / verified |
+| GUI-041 | GUI CONVLOAD documented root-relative file failed status35/RC8 because standalone reports ran from bin/x86 (`host034`). | Standalone reports use application HomeDir; working-directory regression passes. All four actual GUI conversion paths pass PREVIEW/COMMIT/zero-write restart on final source baseline (`final-convert-*`). | Fixed / verified |
+| GUI-042 | PREPARE-gated menu excluded independent VAT finalisation; finalise re-prepared; local-file writing trusted stale cache before permission/state checks. | Reviewer route, saved/frozen-return loading and validated exact-company/period export preserve SoD. Three focused tests and actual VATOWNER/FINCTRL finalise/local-file flow pass (`final059`-`final062`); exact VRN/nine boxes/local-only record. | Fixed / verified |
+| GUI-043 | Eleven-character BANKREF silently stored ten characters (`host055`/`host056`, before-fix row38 retained). | All native-width inputs validated before writes. Exact-limit/overlength tests pass; actual dialog explicitly refuses 11/no write, accepts 10 and completes independent approval (`final064`-`final069`). | Fixed / verified |
+| GUI-044 | SETENV defaults SQL target to STERP and reconstructs ODBC; launcher supplied ODBC but not selected server/catalogue. No affected job launched against original database. | Launcher supplies explicit SQL target/application root from selected profile and rejects unspecified target. Executable regression with deliberately wrong inherited server/database passes. Actual native console explicitly scopes the final clone. | Fixed / verified |
+| GUI-045 | Normal APDEMO consumed/reserved all available payment fixture, preventing new GUI dual-authorised run. | Native posted/matched/idempotent 148.14 utility payable left after example run; existing reservations retained, credit-only suppliers cannot offset other payees. Dedicated regression/control proof and actual new GUI PPS00000002 verified. | Fixed / verified |
+| GUI-046 | Native console constructed MONTHEND.cmdCO=STC / standalone EXE equivalent with missing separator (`ops001`-`ops006`). | Both branches fixed/rebuilt. Actual final console submission/register/monitor/Windows SYSOUT and BSRPT browsing pass. | Fixed / verified |
+| GUI-047 | CSTINVAL remained RUNNING after EXE completion because END cleared its run ID/ignored rejection (`ops010`, historical68 retained). | Preserve ID, surface START/END errors and map warning status correctly. Actual final native CSTINVAL run60 ends OK0 with EndedAt; monetary report agrees (`final-ops003`/`final-ops004`). | Fixed / verified |
+| GUI-048 | Post-SYSTEM plain DISPLAY/ACCEPT mangled actual console completion/prompt (`ops006`/`ops009`). | Existing native screen panel now renders readable RC4/WARNING, log and return instruction; actual final native capture verified. | Fixed / verified |
+| GUI-049 | MONTHEND registers WARNING4 but returns zero; all nine streams collapse success/failure conditions to 0/8. | Both exits propagate MAXCC; 45 exact executable-script assertions pass. Actual final native MONTHEND returns RC4/WARNING with unchanged 158 journals in PREVIEW. | Fixed / verified |
+| GUI-050 | COMPLETED filter hides successful jobs (stored OK); ABENDED absent (`host087`). | Exact stored states selectable; targeted regression passes exact choices/count/row states. Actual final Windows OK filter and monitored log/report browsing verified (`final072`-`final075`). | Fixed / verified |
+| GUI-051 | Actual dual-authorised GUI APBACS run returned RC0 but created malformed Standard18: eight records of lengths 10/30/14/37/105/106/44/20, incorrect data width/amount/totals and missing UTL1. Success/file existence was not sufficient proof (`final030`, original `APBACS-STC-20261012180014.txt` retained). | Native formatter now writes the correct nine-record order, 80-byte control/100-byte data records, 11-digit item/13-digit total amounts, count totals and processing day derived from the stored payment date. Focused single-/multi-payee physical-output tests pass. Actual TREASURY GUI reproduction returns RC4 and writes a new file of exactly 778 bytes with lengths 80/80/80/80/100/100/80/80/80 (`final063`), retaining original instruction status/file reference. No transmission. | Fixed / verified |
+| GUI-052 | Editable catalogue/PAYRUN ENTRYDATE suggested an ineffective native date override. | Catalogue now exactly CO/RUN, unchanged release permission; PAYRUN removes ignored argument. Exact real-launcher parameter regression passes; final clone seed deployed. Stored PayDate/native processing calendar remain authoritative. | Fixed / verified |
+| GUI-053 | Final real OPS/Windows monitor shows native APBACS run 56 still RUNNING after the reproduction EXE exits; outer desktop launcher run55 correctly ends WARNING4. | Preserve native START ID at END, correct success/warning mapping and surface JOBLOG errors. Native/managed rebuild and two focused format/completion tests pass. Actual final GUI reproduction yields native75 WARNING4/EndedAt/one item and outer74 WARNING4, exact nine records/778 bytes (`final077`-`final079`, `final-ops005`). Original instruction status/BacsFileRef and historical56 untouched. | Fixed / verified |
+| GUI-054 | Story2 engineering-change replacement preview/refusal lacked reachable native action; generic approval-gated maintenance was not that action. | Dedicated Bulk Change Preview route under existing BOM.VIEW; native authority checks PREVIEW/GETLINE versus APPLY separately, no approval grants. Actual ENGINEER F10 ECO-BOMDEMO-001 returns seven targets/one validation failure/BOM1411/no bill applied; option row explains BOM0331/BOM0326. Invalid item returns scoped BOM1435. F5 clears rows/answer. Four focused GUI tests and TBOMCHG56 pass on own clone; final actual GUI evidence final080-final083, unchanged persistent header checksum/journal count. | Fixed / verified |
+
+### Final source baseline and repaired-path proof
+
+The final coherent native/managed build is independently deployed to
+`STERP_QA_FINAL_20261012_CE9FD514`, runtime
+`run\work\functional-qa-final-20261012-ce9fd514`. All five preparation drivers
+complete once with RC0. Initial controls are bridged **before** GUI transactions
+only. The before-fix database/runtime remains intact.
+
+The related managed suite passes **25/25** on this clean baseline, including all
+18 GUI regressions, correct job status choices and both launcher regressions.
+The stream test executes all nine scripts at exact conditions 0/4/8/12/16
+with isolated local executable/SQL stubs (45 condition-code assertions).
+Running the same GUI tests against an already locally filed VAT period is not
+a clean fixture: its expected re-prepare refusal opens a modal; the stale-fixture
+run was stopped and the unchanged suite rerun successfully before final filing.
+
+| Workflow | Actual native GUI evidence / outcome |
+|---|---|
+| 1 - STC order to cash | `final001`-`final004`: eight revision-C frames and 16 tyres despatched, DNS00000002/JNS00000085, COGS **1,193.54**. Movement 37 frame relief **187.30** (8 x 23.4125), movement 38 tyre relief **1,006.24**, each exactly one linked costing-history row with equal quantity/value deltas; compatible RDG revision-C pool is relieved, not an empty wildcard pool. `final031`/`final032`: actual invoice PREVIEW/COMMIT, one invoice posted. `final033`-`final035`: **8,196 cash + 4 writeoff**, zero residual. `final039`-`final041`: C0008 whole-balance PRICE dispute; C0009 3,000 promise to 19 October. Actual next DUNNING PREVIEW explains both suppressions; two letters for others and **zero C0008/C0009 matches in DUNNLTR**. |
+| 2 - BOM, kit and cost | Earlier actual GUI bike/cake explosions (568.25/50.20), nine where-used rows, five kit lifecycle states, completed-kit forward/backward consumption and released-header refusal remain applicable. `final036`/`final037`: FY2027STD Impact REVIEW/KWATSON/no approver/seven items/16,094.69 revaluation; target retained. Quarantine is 60 units, not old 180. ENGINEER release refusal is BOM0403, not author self-approval. `final080`-`final083`: original ECO replacement F10 preview has exactly seven targets, six proposed changes (four new revisions/two draft amendments), one failure, no applied revisions; explicit option/rate findings refuse the whole run. Unknown replacement is BOM1435 on one scoped bill; F5 clears all stale output. |
+| 3 - purchasing/payment | `final006`/`final007`: PURMGR's actual inbox decision updates PO00000002 to APPROVED/PURMGR. `final008`-`final010`: **CONFIRMED GRN00000003**, PO00000004 line ID 4 linked exactly, received/accepted **40**, movement/history39/13 value **410.83**, GRNI journal JNS00000086 **410.83**, FULLRECEIVED. `final014`-`final030`: APCLERK builds/reserves/requests PPS00000002, one eligible **148.14** utility payable/ten explicit exclusions; TREASURY first signature warns APA0018; TREASURY2 second; authorised local instructions and Bacs. Initial malformed file is retained; corrected reproduction has nine records/778 bytes, no re-payment/transmission. `final064`-`final069`: eleven-character BANKREF refused/no write, ten-character QACE9FINAL completes independent MATCH/callback/approval. `final077`-`final079`/`final-ops005`: actual launcher exposes only CO/RUN, final reproduction native75/outer74 both WARNING4/EndedAt, original instruction untouched. |
+| 4 - CAL/cut-over | `final046`/`final047`: SOC900004 despatch/invoice, serial-traced movement, cost **47**. All four `final-convert-*` groups execute native PREVIEW/COMMIT/restart: valid records 4 AR/4 AP/5 GL/3 stock, restart **zero new ledger items**, intentional invalid/duplicate records reported explicitly. `final049`: CAL VRN GB233471029, 1 April-30 June 2027, 27A1 DRAFT/zero records. `final054`/`final055`: actual company/site/calendar masters. `final076`: actual three mixed-fixture opening differences and five exceptions (including CAL WIP/ACCRUAL without configured accounts); no invented clean cut-over claim. |
+| 5 - CAL credit/security | `final042`-`final044`: SALESREP requests K0004/SOC900003 **7,128** scoped authority, CREDMGR independently approves, SALESREP completes normal ACCEPTED/RELEASED validation with source-seeded invoice customer K0004 and no hold. `final045`: RESTRICT offers STC/RDG only. `final052`/`final053`: CAL-BIKE-GRAVEL-M has three one-unit remaining serials at GLA, no matching balance at LIV. |
+| 6 - finance/operations | `final056`/`final057`: actual balanced **25** October journal, mandatory dimensions on each line. `final058`: genuine balanced-shape May validation PER0003/hard closed; draft abandoned. `final059`-`final062`: VATOWNER prepares, FINCTRL independently loads/finalises/writes local-only frozen STC/GB412771903/26A2 nine-box file (94,500/47,670/46,830 principal boxes), no external tax submission. `final070`/`final071`: genuine unresolved bank bridge and 2/6 checklist done, two blocking; no forced close. `final-ops001`-`final-ops004`: actual green-screen OPS submission MONTHEND 2026/07 PREVIEW, readable **RC4/WARNING**, CSTINVAL **OK0/EndedAt set**, journal count **158 -> 158**. `final072`-`final075`: actual Windows OK filter, monitor and opened genuine stream SYSOUT/BSRPT spool. |
+
+Final STC RECONCTL agrees for AR, AP, INVENTORY, WIP, GRNI, VAT and ACCRUAL.
+BANK's **8,196.00** difference is the saved pre-receipt position versus the posted
+cash receipt; live bank enquiry reports book **384,281.00** and the fixture's
+unresolved **68,973.44** statement bridge. This is an explicitly owned unmatched
+control position, not an inventory posting defect or permission bypass.
+CAL conversion runs against a pre-populated demonstration entity, so its
+deliberately partial/invalid cut-over dataset is not advertised as an empty-ledger
+opening that agrees automatically. Expected refusals, explicit exclusions and
+blocked close are passing controls, not concealed defects.
+
+Final integrated Release/x86 solution build passes. The seven ShellTests were
+rerun after the final PAYRUN/catalogue/job-log changes: **7 passed, 0 failed,
+0 skipped**, including all 45 exact stream condition assertions. AP native
+rebuild and two focused Standard18/completion-metadata tests pass; parent native
+GUI/database assertions independently prove the repaired completion, not a
+test skip. EXCPAGE/OBLIGREG final GUI reports are retained alongside final STC
+and CAL RECONCTL spools; their warnings describe owned fixture positions.
+
+The final BOM addition passes Release/x86, four focused managed GUI tests
+and all **56 TBOMCHG native assertions** on its dedicated source-deployed
+`STERP_QA_BOM_20261012_CE9FD514` clone. Reinvoking those four tests on the
+already-posted final financial clone intentionally skips by their clone-safety
+guard; those skips are **not** counted as passes. Final source menu/native DLL/
+managed binaries are deployed coherently and actual final GUI F10/F5 events
+independently verify exact row counts/refusal/output clearing. Both owned final
+GUI hosts and the native OPS console exit gracefully; evidence, runtimes and
+isolated databases remain available. No production database, shared SQL Agent
+job, external payment/tax service or forced balancing adjustment is used.
+
+The inventory repair also identified a compatible-pool selection defect during
+actual despatch DNS00000003: revision-C frame relief selected an empty wildcard
+pool instead of the existing RDG pool. The corrected contract prefers the
+compatible existing pool. Its SQL/native regression evidence passes, but a
+fresh-baseline native despatch is still required; the earlier zero-cost movement
+is retained as before-fix evidence rather than retrospectively rewritten.

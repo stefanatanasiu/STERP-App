@@ -462,6 +462,7 @@
 *> not raise a second revision.
  Apply-Then-Apply-Again.
      PERFORM Set-Up-Change
+     MOVE "ENGMGR" TO BA-USER
      MOVE "TBOMCHG-APPLY" TO BB-CHANGE-REF
      MOVE "Double the B3 granulate" TO BB-TITLE
      MOVE "QTYCHG" TO BB-ACTION
@@ -495,6 +496,7 @@
 
  Repeat-The-Same-Apply.
      PERFORM Set-Up-Change
+     MOVE "ENGMGR" TO BA-USER
      MOVE "TBOMCHG-APPLY" TO BB-CHANGE-REF
      MOVE "QTYCHG" TO BB-ACTION
      MOVE "BOMREF" TO BB-SCOPE

@@ -148,6 +148,12 @@ SELECT o.CompanyCode, o.SiteCode, o.OrderNumber, o.OrderType, o.BlanketOrderNumb
   FROM @o o
  WHERE NOT EXISTS (SELECT 1 FROM so.SalesOrder x WHERE x.CompanyCode = o.CompanyCode AND x.OrderNumber = o.OrderNumber);
 
+/* The held Livingston fixture invoices its own customer; acceptance still validates the full header. */
+UPDATE so.SalesOrder
+   SET InvoiceCustomerCode = CustomerCode
+ WHERE CompanyCode = 'CAL' AND OrderNumber = 'SOC900003'
+   AND CreatedBy = 'SEED' AND InvoiceCustomerCode IS NULL;
+
 DECLARE @ol table (CompanyCode varchar(10), OrderNumber varchar(30), LineNum int, LineType varchar(10), ItemCode varchar(40),
                    Description varchar(200), Qty decimal(19,6), Cancelled decimal(19,6), Despatched decimal(19,6),
                    UomCode varchar(10), UnitPrice decimal(19,6), Disc1 decimal(9,4), PriceSource varchar(20),

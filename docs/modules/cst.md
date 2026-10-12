@@ -144,7 +144,7 @@ a what-if creates no cost set (CST-023) and the WIP roll-forward balances.
 | Form | Menu entry | What it does |
 |---|---|---|
 | `frmCostEnquiry` | `CST.ENQUIRY` (Ctrl+K) | `cst.usp_CostEnquiry` — every basis side by side for one item, blank site meaning every site. |
-| `frmCostSet` | `CST.COSTSET` | The cost set lifecycle through `STDCOST`: Review, Approve (F10), Activate, Impact and Compare. The worklist flags a set approved by its own preparer, and an attempt to approve one comes back as the engine's `CST0405` error rather than a silent refusal. |
+| `frmCostSet` | `CST.COSTSET` | The cost set lifecycle through `STDCOST`: Review, Approve (F10), Activate, Impact and Compare. Comparison retains its selected action target. Impact reports that set's actual lifecycle/preparer/approver and refuses an unknown set. The worklist flags a set approved by its own preparer, and an attempt to approve one comes back as the engine's `CST0405` error rather than a silent refusal. |
 | `frmCostRollup` | `CST.ROLLUP` (Ctrl+R) | `COSTROLL` `ROLLUP`/`GETLINE` with the costed tree and the element breakdown, the completeness and the missing-cost count in the status line; the What-if button prices three variants through `WHATIF` and writes nothing. |
 | `frmJobCost` | `CST.JOB` (Ctrl+J), `CST.WIP` | `cst.usp_JobList` worklist, then `JOBCOST` `ENQUIRE`/`FORECAST` and `WIPCALC` `CALC`. Opened from Work in Progress (`FormArgument` `WIP`) the roll-forward is what F10 runs. |
 

@@ -74,6 +74,8 @@
            05  WS-LINE-NO              PIC S9(4) VALUE 0.
            05  WS-LINE-SQLCODE         PIC S9(9) COMP-5 VALUE 0.
            05  WS-LINE-ERRMSG          PIC X(256) VALUE SPACES.
+           05  WS-UOW-ACTIVE           PIC X VALUE "N".
+           05  WS-UOW-OWN              PIC X VALUE "N".
        LINKAGE SECTION.
        COPY RECEIPTCA.
        PROCEDURE DIVISION USING DFHCOMMAREA.
@@ -83,6 +85,12 @@
            PERFORM 1000-INIT THRU 1000-EXIT
            IF WS-FATAL
                GO TO 0000-RETURN
+           END-IF
+           IF CA-FUNCTION = "CONFIRM" OR "TRANSIT" OR "REVERSE"
+               PERFORM 8300-BEGIN-UOW THRU 8300-EXIT
+               IF CA-FAILED
+                   GO TO 0000-RETURN
+               END-IF
            END-IF
            EVALUATE CA-FUNCTION
                WHEN "VALIDATE"
@@ -103,7 +111,10 @@
                           " is not supported by RECEIPT"
                        DELIMITED BY SIZE INTO CA-MESSAGE
                    MOVE 8 TO CA-RETURN-CODE
-           END-EVALUATE.
+           END-EVALUATE
+           IF WS-UOW-ACTIVE = "Y"
+               PERFORM 8400-END-UOW THRU 8400-EXIT
+           END-IF.
        0000-RETURN.
            GOBACK.
        0000-EXIT.
@@ -120,6 +131,7 @@
            MOVE "N" TO WS-FATAL-SW
            MOVE "N" TO WS-DB-SW
            MOVE "N" TO WS-HELD-SW
+           MOVE "N" TO WS-UOW-ACTIVE WS-UOW-OWN
            MOVE "RECEIPT" TO CA-PROGRAM
            MOVE 0 TO CA-RETURN-CODE
            MOVE SPACES TO CA-REASON-CODE CA-MESSAGE
@@ -515,13 +527,18 @@
                GO TO 3000-EXIT
            END-IF
            PERFORM VARYING WS-I FROM 1 BY 1
-                   UNTIL WS-I > RC-LINE-CNT
+                   UNTIL WS-I > RC-LINE-CNT OR CA-FAILED
                IF RC-L-OUTCOME(WS-I) NOT = "REJECT"
                   AND RC-L-OUTCOME(WS-I) NOT = "HOLD"
                    PERFORM 3200-MOVE-STOCK THRU 3200-EXIT
-                   PERFORM 3300-WRITE-LINE THRU 3300-EXIT
+                   IF NOT CA-FAILED
+                       PERFORM 3300-WRITE-LINE THRU 3300-EXIT
+                   END-IF
                END-IF
            END-PERFORM
+           IF CA-FAILED
+               GO TO 3000-EXIT
+           END-IF
            MOVE RC-TOTAL-GBP TO RC-GRNI-GBP
            PERFORM 3500-POST-GRNI THRU 3500-EXIT
            IF NOT CA-FAILED
@@ -624,8 +641,12 @@
            END-IF
            MOVE RC-L-RECEIVED(WS-I) TO SM-QUANTITY
            MOVE RC-L-UOM(WS-I) TO SM-UOM-CODE
-           MOVE RC-L-PRICE(WS-I) TO SM-UNIT-COST
-           MOVE RC-L-VALUE-GBP(WS-I) TO SM-VALUE-GBP
+           COMPUTE SM-VALUE-GBP =
+               RC-L-VALUE-GBP(WS-I) - RC-L-PPV-GBP(WS-I)
+           IF RC-L-STOCK-QTY(WS-I) > 0
+               COMPUTE SM-UNIT-COST ROUNDED =
+                   SM-VALUE-GBP / RC-L-STOCK-QTY(WS-I)
+           END-IF
            MOVE WS-MOVE-DATE TO SM-MOVEMENT-DATE
            MOVE RC-POSTING-DATE TO SM-POSTING-DATE
            MOVE RC-L-EXPIRY(WS-I) TO SM-EXPIRY-DATE
@@ -990,7 +1011,10 @@
                        MOVE "QUARANTINE" TO SM-CONDITION
                    END-IF
                    MOVE RC-L-UOM(WS-I) TO SM-UOM-CODE
-                   MOVE RC-L-PRICE(WS-I) TO SM-UNIT-COST
+                   COMPUTE SM-VALUE-GBP =
+                       RC-L-VALUE-GBP(WS-I) - RC-L-PPV-GBP(WS-I)
+                   COMPUTE SM-UNIT-COST ROUNDED =
+                       SM-VALUE-GBP / RC-L-STOCK-QTY(WS-I)
                    MOVE CA-BUSINESS-DATE TO SM-MOVEMENT-DATE
                    MOVE "PORCPTREV" TO SM-REASON-CODE
                    MOVE RC-REVERSE-REASON TO SM-REASON
@@ -1084,6 +1108,82 @@
                PERFORM 9000-REJECT THRU 9000-EXIT
            END-IF.
        8200-EXIT.
+           EXIT.
+      *>   Driver UOW ownership, not a batch's @@TRANCOUNT, controls
+      *>   commit. Header, stock, line identity, GRNI and delivery
+      *>   state must persist together or not at all.
+       8300-BEGIN-UOW SECTION.
+       8300-START.
+           MOVE "TSTA" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+           IF SQLIO-ERROR
+               MOVE SQLIO-ERRMSG TO CA-MESSAGE
+               MOVE "RCP0010" TO CA-REASON-CODE
+               PERFORM 9000-REJECT THRU 9000-EXIT
+               GO TO 8300-EXIT
+           END-IF
+           IF SQLIO-ROWCOUNT = 1
+               MOVE "BEGN" TO SQLIO-FUNC
+               CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+               IF SQLIO-ERROR
+                   MOVE SQLIO-ERRMSG TO CA-MESSAGE
+                   MOVE "RCP0010" TO CA-REASON-CODE
+                   PERFORM 9000-REJECT THRU 9000-EXIT
+                   GO TO 8300-EXIT
+               END-IF
+               MOVE "Y" TO WS-UOW-OWN
+           END-IF
+           MOVE "Y" TO WS-UOW-ACTIVE
+           MOVE SPACES TO SQLIO-STMT
+           STRING "IF @@TRANCOUNT = 0 BEGIN TRANSACTION; "
+                  "SAVE TRANSACTION RECEIPT"
+               DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE 0 TO SQLIO-PARM-CNT SQLIO-COL-CNT
+           MOVE 3 TO SQLIO-CURSOR
+           MOVE "EXEC" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+           IF SQLIO-ERROR
+               MOVE SQLIO-ERRMSG TO CA-MESSAGE
+               MOVE "RCP0010" TO CA-REASON-CODE
+               PERFORM 9000-REJECT THRU 9000-EXIT
+               PERFORM 8400-END-UOW THRU 8400-EXIT
+           ELSE
+               MOVE "CLOS" TO SQLIO-FUNC
+               CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+           END-IF.
+       8300-EXIT.
+           EXIT.
+
+       8400-END-UOW SECTION.
+       8400-START.
+           MOVE 0 TO SQLIO-PARM-CNT SQLIO-COL-CNT
+           MOVE 3 TO SQLIO-CURSOR
+           IF WS-UOW-OWN = "Y"
+               IF CA-FAILED
+                   MOVE "ROLB" TO SQLIO-FUNC
+               ELSE
+                   MOVE "COMT" TO SQLIO-FUNC
+               END-IF
+               CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+               IF SQLIO-ERROR AND NOT CA-FAILED
+                   MOVE SQLIO-ERRMSG TO CA-MESSAGE
+                   MOVE "RCP0010" TO CA-REASON-CODE
+                   PERFORM 9000-REJECT THRU 9000-EXIT
+               END-IF
+           ELSE
+               IF CA-FAILED
+                   MOVE SPACES TO SQLIO-STMT
+                   STRING "IF XACT_STATE() = 1 "
+                          "ROLLBACK TRANSACTION RECEIPT"
+                       DELIMITED BY SIZE INTO SQLIO-STMT
+                   MOVE "EXEC" TO SQLIO-FUNC
+                   CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+                   MOVE "CLOS" TO SQLIO-FUNC
+                   CALL "SQLIO" USING SQLIO-CA WS-ONE-COL
+               END-IF
+           END-IF
+           MOVE "N" TO WS-UOW-ACTIVE.
+       8400-EXIT.
            EXIT.
       *>----------------------------------------------------------------
        9000-REJECT SECTION.

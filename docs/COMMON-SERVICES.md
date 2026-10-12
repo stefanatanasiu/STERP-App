@@ -396,11 +396,25 @@ dropped when blank and the stamp omitted when `RP-USE-TIMESTAMP = "N"`. Supply
 ## 6. SQLIO and PING
 
 `SQLIO` (`SQLIOCA`) is the only route from COBOL to SQL Server — see CONVENTIONS 3.4.
-Functions `EXEC`, `FTCH`, `SNGL`, `MORE`, `CLOS`, `BEGN`, `COMT`, `ROLB`, `CONN`, `DISC`;
+Functions `EXEC`, `FTCH`, `SNGL`, `MORE`, `CLOS`, `BEGN`, `COMT`, `ROLB`, `TSTA`, `CONN`, `DISC`;
 `SQLIO-SQLCODE` is `0` OK, `100` not found / end of data, `-1` error (`SQLIO-SQLSTATE`,
 `SQLIO-ERRMSG`). Always bind with `?` and `SQLIO-PARM-VAL(n)`; never build SQL from user
 text. Cursors 1–8 allow nested loops. `PING` (`PINGCA`) echoes a COMMAREA and reads the
 database — the client's health check.
+
+`TSTA` reports ODBC driver autocommit through `SQLIO-ROWCOUNT`: `1` means on,
+`0` means a caller-owned manual UOW. It changes no transaction state. A service
+called with autocommit on must use `BEGN` before a multi-statement UOW and end it
+with `COMT`/`ROLB`; a raw T-SQL `BEGIN`/`COMMIT` across separate MARS statements is
+not a substitute. Inside an existing driver UOW, use a SQL savepoint and leave the
+driver's commit/rollback to its caller. An uncommittable caller transaction requires
+the caller's full rollback.
+
+`RECEIPT` spans header, stock valuation, line identity, GRNI and delivery state in
+one such UOW; `STKMOVE` joins it without changing driver ownership. `TPRCVTX`
+proves real native receipts survive reconnect with matching ledger/stock evidence,
+and that early/late failures leave no partial receipt. Its committed fixtures run
+only in `STERP_QA_` databases and are cleaned afterwards.
 
 ---
 

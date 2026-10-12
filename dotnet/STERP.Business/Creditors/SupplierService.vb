@@ -18,6 +18,24 @@ Public Class SupplierService
     Public Property Note As String = ""
     Public Property CopResult As String = ""
     Public Property BankStatus As String = ""
+    Public Property BankId As Integer
+
+    Public Function PrepareBank(ByVal supplier As String, ByVal bankRef As String,
+                                ByVal beneficiary As String, ByVal sortCode As String,
+                                ByVal accountNo As String, ByVal bankName As String,
+                                ByVal requestSource As String) As CobolResult
+        Dim ca As CommArea = NewArea("APBANKVRCA")
+        Dim invalid As CobolResult = SetBankInputs(ca,
+            "BV-SUPPLIER", supplier, "BV-BANK-REF", bankRef, "BV-BENEFICIARY", beneficiary,
+            "BV-COUNTRY", "GB", "BV-CURRENCY", "GBP", "BV-SORT-CODE", sortCode,
+            "BV-ACCOUNT-NO", accountNo, "BV-BANK-NAME", bankName, "BV-PAY-METHOD", "BACS",
+            "BV-REQUEST-SOURCE", requestSource)
+        If invalid IsNot Nothing Then Return invalid
+        ca.SetString("BV-PREPARED-BY", User)
+        Dim r As CobolResult = Link("APBANKVR", ca, "PREPARE", Session.NewCorrelationId())
+        ReadBank(ca)
+        Return r
+    End Function
 
     ''' <summary>Supplier list with ledger balance and verification counts.</summary>
     Public Function Suppliers(ByVal filter As String, ByVal mode As String) As DataTable
@@ -61,13 +79,52 @@ Public Class SupplierService
 
     ''' <summary>Confirmation of Payee on a bank record; the answer is never a payment decision
     ''' on its own, it is evidence the approver has to weigh (AP-002, D-19).</summary>
-    Public Function ConfirmationOfPayee(ByVal supplier As String, ByVal bankId As Integer) As CobolResult
+    Public Function ConfirmationOfPayee(ByVal supplier As String, ByVal bankId As Integer,
+                                       Optional ByVal result As String = "",
+                                       Optional ByVal reference As String = "",
+                                       Optional ByVal decision As String = "") As CobolResult
         Dim ca As CommArea = NewArea("APBANKVRCA")
-        ca.SetString("BV-SUPPLIER", supplier)
+        Dim invalid As CobolResult = SetBankInputs(ca,
+            "BV-SUPPLIER", supplier, "BV-COP-RESULT", result,
+            "BV-COP-REFERENCE", reference, "BV-COP-DECISION", decision)
+        If invalid IsNot Nothing Then Return invalid
         ca.SetInt("BV-BANK-ID", bankId)
         Dim r As CobolResult = Link("APBANKVR", ca, "COP", Session.NewCorrelationId())
         ReadBank(ca)
         Return r
+    End Function
+
+    Public Function RecordCallback(ByVal supplier As String, ByVal bankId As Integer,
+                                   ByVal contactSource As String, ByVal contactOnFile As Boolean,
+                                   ByVal note As String) As CobolResult
+        Dim ca As CommArea = NewArea("APBANKVRCA")
+        Dim invalid As CobolResult = SetBankInputs(ca,
+            "BV-SUPPLIER", supplier, "BV-CALLBACK-SOURCE", contactSource, "BV-CALLBACK-NOTE", note)
+        If invalid IsNot Nothing Then Return invalid
+        ca.SetInt("BV-BANK-ID", bankId)
+        ca.SetString("BV-CALLBACK-ON-FILE", If(contactOnFile, "Y", "N"))
+        ca.SetString("BV-CALLBACK-BY", User)
+        Dim r As CobolResult = Link("APBANKVR", ca, "CALLBACK", Session.NewCorrelationId())
+        ReadBank(ca)
+        Return r
+    End Function
+
+    Private Shared Function SetBankInputs(ByVal ca As CommArea, ByVal ParamArray nv() As String) As CobolResult
+        ' The native codec pads/truncates PIC X values; reject before marshalling
+        ' so a requested identifier or evidence string is never silently changed.
+        For i As Integer = 0 To nv.Length - 1 Step 2
+            Dim width As Integer = ca.Field(nv(i)).ElementLength
+            If If(nv(i + 1), "").Length > width Then
+                Dim label As String = If(nv(i) = "BV-BANK-REF", "Bank reference", nv(i))
+                Return New CobolResult With {.Program = "APBANKVR", .ReturnCode = 8,
+                    .ReasonCode = "APBINPUT", .Message = label & " must be at most " & width &
+                    " characters. Nothing was recorded."}
+            End If
+        Next
+        For i As Integer = 0 To nv.Length - 1 Step 2
+            ca.SetString(nv(i), nv(i + 1))
+        Next
+        Return Nothing
     End Function
 
     ''' <summary>Independent approval of a bank change.  The approver is always the signed on
@@ -78,7 +135,8 @@ Public Class SupplierService
         ca.SetString("BV-SUPPLIER", supplier)
         ca.SetInt("BV-BANK-ID", bankId)
         ca.SetString("BV-APPROVER", User)
-        ca.SetString("BV-DECISION", decision)
+        ca.SetString("BV-DECISION", If(decision = "APPROVE", "APPROVED",
+                                     If(decision = "REJECT", "REJECTED", decision)))
         Dim r As CobolResult = Link("APBANKVR", ca, "APPROVE", Session.NewCorrelationId())
         ReadBank(ca)
         Return r
@@ -96,6 +154,7 @@ Public Class SupplierService
     Private Sub ReadBank(ByVal ca As CommArea)
         CopResult = ca.GetString("BV-COP-RESULT")
         BankStatus = ca.GetString("BV-STATUS")
+        BankId = ca.GetInt("BV-BANK-ID")
         Note = ca.GetString("BV-NOTE")
     End Sub
 

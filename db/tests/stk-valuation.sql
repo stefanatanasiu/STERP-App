@@ -576,6 +576,141 @@ BEGIN CATCH
     PRINT 'not ok 62 to 71 - unexpected error in the replay and failure scenario: ' + @msg;
 END CATCH
 GO
+/*  72 to 86 - pool dimensions, receipt-layer reversal and allowance follow-through.
+    These exercise the boundaries not present in the original GUI reproduction. */
+DECLARE @msg varchar(400), @first bigint, @newer bigint, @reverse bigint;
+BEGIN TRY
+    BEGIN TRANSACTION;
+    EXEC #sv_item 'ZZ-SV-DIM', 'FIFO';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-DIM', 'A', 'RECEIPT', 10, @Value = 50, @DocRef = 'ZZ-SV-DIM-R1', @MovId = @first OUTPUT;
+    EXEC #sv_post 'BHM', 'STKA01', 'ZZ-SV-DIM', 'A', 'RECEIPT', 10, @Value = 80, @DocRef = 'ZZ-SV-DIM-B1';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-DIM', 'B', 'RECEIPT', 10, @Value = 120, @DocRef = 'ZZ-SV-DIM-RB';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-DIM', 'A', 'ISSUE', 2, @DocRef = 'ZZ-SV-DIM-I1';
+    EXEC #sv_is '72', 'FIFO relief is confined to the issuing site and revision', 'ZZ-SV-DIM', 'RDG', 'A', 8, 40, 5;
+    EXEC #sv_is '73', 'FIFO relief leaves the other site pool alone', 'ZZ-SV-DIM', 'BHM', 'A', 10, 80, 8;
+    EXEC #sv_is '74', 'FIFO relief leaves the other revision pool alone', 'ZZ-SV-DIM', 'RDG', 'B', 10, 120, 12;
+    IF EXISTS (SELECT 1 FROM cst.CostLayer WHERE MovementId = @first AND SiteCode = 'RDG' AND QtyRemaining = 8 AND ValueRemainingGBP = 40)
+        PRINT 'ok 75 - the FIFO layer carries the pool site and the remaining value';
+    ELSE PRINT 'not ok 75 - the FIFO layer lost its site or value';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-DIM', 'A', 'RECEIPT', 10, @Value = 90, @DocRef = 'ZZ-SV-DIM-R2', @MovId = @newer OUTPUT;
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-DIM', 'A', 'ISSUE', 10, @Unit = 99, @DocRef = 'ZZ-SV-DIM-R2',
+                  @DocType = 'RECEIPTREVERSAL', @MovId = @reverse OUTPUT;
+    EXEC #sv_is '76', 'a FIFO receipt reversal removes its original layer, not the oldest layer', 'ZZ-SV-DIM', 'RDG', 'A', 8, 40, 5;
+    IF EXISTS (SELECT 1 FROM cst.CostLayer WHERE MovementId = @newer AND QtyRemaining = 0 AND ValueRemainingGBP = 0 AND IsClosed = 1)
+       AND EXISTS (SELECT 1 FROM cst.CostLayer WHERE MovementId = @first AND QtyRemaining = 8 AND ValueRemainingGBP = 40)
+        PRINT 'ok 77 - the reversed receipt layer is closed and the older layer is unchanged';
+    ELSE PRINT 'not ok 77 - the reversal consumed the wrong layer';
+    IF EXISTS (SELECT 1 FROM inv.StockMovement WHERE MovementId = @reverse AND ValueGBP = -90)
+        PRINT 'ok 78 - a receipt reversal uses the original posted value even when the caller supplies a different price';
+    ELSE PRINT 'not ok 78 - the receipt reversal did not retain original valuation';
+
+    INSERT cst.CostPolicy (CompanyCode, ValuationGroup, EffectiveFrom, CostMethod, PoolBySite, PoolByRevision, ApprovedBy)
+    VALUES ('STC', 'ZZSVR', '2026-01-01', 'MWA', 1, 0, 'TEST');
+    EXEC #sv_item 'ZZ-SV-REV', 'FIFO', 'ZZSVR';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-REV', 'A', 'RECEIPT', 4, @Value = 20;
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-REV', 'B', 'RECEIPT', 3, @Value = 30;
+    EXEC #sv_is '79', 'approved policy overrides the item method and pools all revisions', 'ZZ-SV-REV', 'RDG', '', 7, 50, 7.142857;
+    IF (SELECT COUNT(*) FROM cst.ItemCost WHERE ItemCode = 'ZZ-SV-REV') = 1
+       AND NOT EXISTS (SELECT 1 FROM cst.CostLayer WHERE ItemCode = 'ZZ-SV-REV')
+        PRINT 'ok 80 - revisionless moving average policy creates one pool and no FIFO layers';
+    ELSE PRINT 'not ok 80 - revisionless policy split the pool or created layers';
+    UPDATE cst.ItemCost SET NrvUnitValue = 5, AllowanceGBP = 15 WHERE ItemCode = 'ZZ-SV-REV';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-REV', 'C', 'RECEIPT', 1, @Value = 10;
+    IF EXISTS (SELECT 1 FROM cst.ItemCost WHERE ItemCode = 'ZZ-SV-REV' AND AllowanceGBP = 20)
+        PRINT 'ok 81 - receipt recalculates the allowance against the retained NRV';
+    ELSE PRINT 'not ok 81 - receipt left a stale NRV allowance';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-REV', 'A', 'ISSUE', 2;
+    EXEC #sv_is '82', 'revisionless issue uses the shared current average', 'ZZ-SV-REV', 'RDG', '', 6, 45, 7.5;
+    IF EXISTS (SELECT 1 FROM cst.ItemCost WHERE ItemCode = 'ZZ-SV-REV' AND AllowanceGBP = 15 AND NrvUnitValue = 5)
+        PRINT 'ok 83 - issue recalculates allowance and preserves NRV';
+    ELSE PRINT 'not ok 83 - issue lost NRV or left a stale allowance';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-REV', 'A', 'ISSUE', 2;
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-REV', 'B', 'ISSUE', 3;
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-REV', 'C', 'ISSUE', 1;
+    IF EXISTS (SELECT 1 FROM cst.ItemCost WHERE ItemCode = 'ZZ-SV-REV' AND QtyOnHand = 0 AND CarryingValueGBP = 0 AND AllowanceGBP = 0)
+        PRINT 'ok 84 - emptying the shared pool clears its allowance too';
+    ELSE PRINT 'not ok 84 - the empty pool retained an allowance';
+    EXEC #sv_item 'ZZ-SV-ALLOW', 'MWA';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-ALLOW', 'A', 'RECEIPT', 10, @Value = 100;
+    UPDATE cst.ItemCost SET AllowanceGBP = 20 WHERE ItemCode = 'ZZ-SV-ALLOW';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-ALLOW', 'A', 'ISSUE', 4;
+    IF EXISTS (SELECT 1 FROM cst.ItemCost WHERE ItemCode = 'ZZ-SV-ALLOW' AND AllowanceGBP = 12 AND NrvUnitValue IS NULL)
+        PRINT 'ok 85 - an allowance without unit NRV is relieved proportionately';
+    ELSE PRINT 'not ok 85 - the allowance without unit NRV was not relieved proportionately';
+    IF NOT EXISTS (SELECT 1 FROM cst.ItemCost WHERE ItemCode LIKE 'ZZ-SV-%' AND (QtyOnHand < 0 OR CarryingValueGBP < 0 OR AllowanceGBP < 0))
+        PRINT 'ok 86 - dimensioned relief and reversals leave no negative pool or allowance';
+    ELSE PRINT 'not ok 86 - dimensioned valuation produced a negative balance';
+    ROLLBACK TRANSACTION;
+END TRY
+BEGIN CATCH
+    SET @msg = ERROR_MESSAGE();
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    PRINT 'not ok 72 to 86 - unexpected error in dimensions and allowance: ' + @msg;
+END CATCH
+GO
+/*  87 to 89 - legacy wildcard origin and a separately established destination pool.
+    Pool identity, not merely a '*' site on either leg, determines transfer neutrality. */
+DECLARE @msg varchar(400), @out bigint, @carry decimal(18,2);
+BEGIN TRY
+    BEGIN TRANSACTION;
+    EXEC #sv_item 'ZZ-SV-MIX', 'MWA';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-MIX', 'A', 'OPENING', 20;
+    EXEC #sv_post 'BHM', 'STKA01', 'ZZ-SV-MIX', 'A', 'OPENING', 5;
+    EXEC #sv_pool 'ZZ-SV-MIX', '*', '', 'MWA', 20, 100, 5;
+    EXEC #sv_pool 'ZZ-SV-MIX', 'BHM', 'A', 'MWA', 5, 50, 10;
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-MIX', 'A', 'TRANSFEROUT', 4, @CpSite = 'BHM', @CpLoc = 'STKA01', @MovId = @out OUTPUT;
+    SELECT @carry = ABS(ValueGBP) FROM inv.StockMovement WHERE MovementId = @out;
+    EXEC #sv_post 'BHM', 'STKA01', 'ZZ-SV-MIX', 'A', 'TRANSFERIN', 4, @Value = @carry, @CpSite = 'RDG', @CpLoc = 'STKA01';
+    EXEC #sv_is '87', 'wildcard fallback origin is relieved when the destination resolves to a different pool', 'ZZ-SV-MIX', '*', '', 16, 80, 5;
+    EXEC #sv_is '88', 'the exact destination receives the value relieved from the wildcard origin', 'ZZ-SV-MIX', 'BHM', 'A', 9, 70, 7.777778;
+    IF (SELECT SUM(CarryingValueGBP) FROM cst.ItemCost WHERE ItemCode = 'ZZ-SV-MIX') = 150
+       AND (SELECT COUNT(*) FROM cst.ItemCostHistory WHERE ItemCode = 'ZZ-SV-MIX') = 2
+        PRINT 'ok 89 - mixed legacy pool transfer preserves company value and records both pool identities';
+    ELSE PRINT 'not ok 89 - mixed legacy pool transfer changed company value or omitted its history';
+    ROLLBACK TRANSACTION;
+END TRY
+BEGIN CATCH
+    SET @msg = ERROR_MESSAGE();
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    PRINT 'not ok 87 to 89 - unexpected error in wildcard transfer: ' + @msg;
+END CATCH
+GO
+/*  90 to 94 - GUI DNS00000003 regression. FINISHED policy is company-wide, but
+    the established standard pool is site-specific. Policy does not migrate stock.
+    An empty wildcard pool, including one left by an older posting, must not mask it. */
+DECLARE @msg varchar(400), @movement bigint;
+BEGIN TRY
+    BEGIN TRANSACTION;
+    INSERT cst.CostPolicy (CompanyCode, ValuationGroup, EffectiveFrom, CostMethod, PoolBySite, PoolByRevision, ApprovedBy)
+    VALUES ('STC', 'ZZSVSTD', '2026-01-01', 'STD', 0, 1, 'TEST');
+    EXEC #sv_item 'ZZ-SV-POLSTD', 'STD', 'ZZSVSTD';
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-POLSTD', 'C', 'OPENING', 31;
+    EXEC #sv_pool 'ZZ-SV-POLSTD', 'RDG', 'C', 'STD', 31, 704.63, 22.73, 23.4119;
+    EXEC #sv_pool 'ZZ-SV-POLSTD', '*', 'C', 'STD', 0, 0, 0;
+    EXEC #sv_post 'RDG', 'STKA01', 'ZZ-SV-POLSTD', 'C', 'ISSUE', 8,
+                  @Unit = 23.4119, @Value = 187.30, @MovId = @movement OUTPUT;
+    EXEC #sv_is '90', 'company-wide policy cannot shadow an established exact-site standard pool', 'ZZ-SV-POLSTD', 'RDG', 'C', 23, 517.33, 22.492609;
+    IF EXISTS (SELECT 1 FROM inv.StockMovement WHERE MovementId = @movement AND Revision = 'C' AND CostMethod = 'STD'
+               AND UnitCost = 23.4125 AND ValueGBP = -187.30)
+        PRINT 'ok 91 - the standard despatch keeps its revision and relieves the posted 187.30';
+    ELSE PRINT 'not ok 91 - standard despatch lost its revision or value';
+    IF EXISTS (SELECT 1 FROM cst.ItemCostHistory WHERE MovementId = @movement AND SiteCode = 'RDG'
+               AND QtyBefore = 31 AND QtyAfter = 23 AND ValueBeforeGBP = 704.63 AND ValueAfterGBP = 517.33)
+        PRINT 'ok 92 - standard despatch history identifies the established pool and its actual before/after';
+    ELSE PRINT 'not ok 92 - standard despatch valued an empty policy pool';
+    EXEC #sv_is '93', 'an empty legacy wildcard remains unchanged rather than masking the site pool', 'ZZ-SV-POLSTD', '*', 'C', 0, 0, 0;
+    IF (SELECT StandardUnitCost FROM cst.ItemCost WHERE ItemCode = 'ZZ-SV-POLSTD' AND SiteCode = 'RDG') = 23.4119
+       AND NOT EXISTS (SELECT 1 FROM core.ExceptionItem WHERE Module = 'CST' AND DocumentRef = 'ZZ-SV' AND Quantity = 8)
+        PRINT 'ok 94 - the approved standard survives and no false valuation shortfall is raised';
+    ELSE PRINT 'not ok 94 - standard despatch changed the standard or raised a false shortfall';
+    ROLLBACK TRANSACTION;
+END TRY
+BEGIN CATCH
+    SET @msg = ERROR_MESSAGE();
+    IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
+    PRINT 'not ok 90 to 94 - unexpected error in established standard pool regression: ' + @msg;
+END CATCH
+GO
 /*  Remove what the committed scenarios wrote. */
 DELETE FROM cst.ItemCostHistory WHERE CompanyCode = 'STC' AND ItemCode LIKE 'ZZ-SV%';
 DELETE FROM cst.CostLayer       WHERE CompanyCode = 'STC' AND ItemCode LIKE 'ZZ-SV%';

@@ -149,6 +149,8 @@ namespace STERP.Tests
             St.Eq(0, rr.ReturnCode, "the batch program ended with return code 0");
             St.True(rr.Succeeded, "return code 0 counts as success");
             St.Contains("CO=STC", rr.Output, "the KEY=VALUE arguments reached the program");
+            St.Contains("STERP-I-HOME " + ReportService.HomeDir(), rr.Output,
+                "relative data paths resolve from the application root, as job streams do");
             St.Eq(spool, rr.SpoolFile, "the STERP-I-SPOOL line was parsed");
             St.True(File.Exists(rr.LogFile), "the console log was written to " + rr.LogFile);
 
@@ -168,12 +170,92 @@ namespace STERP.Tests
             try { File.Delete(exe); File.Delete(rr.LogFile); File.Delete(spool); } catch { }
         }
 
+        [StTest("report: job streams inherit the application SQL target, not a shell default", Reqs = "COM-014,XMD-005")]
+        public static void JobStreamsUseSelectedDatabase()
+        {
+            SterpSession.Current.UserCode = "SYSADM";
+            SterpSession.Current.CompanyCode = "STC";
+            string name = "STRPTSTJOB" + Guid.NewGuid().ToString("N").Substring(0, 8);
+            string script = ReportService.JobStream(name);
+            string oldDatabase = Environment.GetEnvironmentVariable("STERP_DATABASE");
+            string oldServer = Environment.GetEnvironmentVariable("STERP_SQLSERVER");
+            ReportRun result = null;
+            try
+            {
+                Directory.CreateDirectory(Path.GetDirectoryName(script));
+                File.WriteAllText(script, "@echo off\r\necho STERP-I-DATABASE %STERP_DATABASE%\r\n" +
+                    "echo STERP-I-SERVER %STERP_SQLSERVER%\r\nexit /b 0\r\n");
+                Environment.SetEnvironmentVariable("STERP_DATABASE", "WRONG_SHELL_DATABASE");
+                Environment.SetEnvironmentVariable("STERP_SQLSERVER", "WRONG_SHELL_SERVER");
+                result = new ReportService().Run("JOB.HARNESS", name, new Dictionary<string, string>());
+                var sql = new System.Data.SqlClient.SqlConnectionStringBuilder(SterpConfig.SqlConnectionString);
+                St.Eq(0, result.ReturnCode, "the local job stream runs successfully");
+                St.Contains("STERP-I-DATABASE " + sql.InitialCatalog, result.Output,
+                    "SETENV receives the selected application database");
+                St.Contains("STERP-I-SERVER " + sql.DataSource, result.Output,
+                    "SQL job steps receive the selected application server");
+                St.True(!result.Output.Contains("WRONG_SHELL"), "inherited shell defaults cannot retarget the job");
+            }
+            finally
+            {
+                Environment.SetEnvironmentVariable("STERP_DATABASE", oldDatabase);
+                Environment.SetEnvironmentVariable("STERP_SQLSERVER", oldServer);
+                if (File.Exists(script)) File.Delete(script);
+                if (result != null && File.Exists(result.LogFile)) File.Delete(result.LogFile);
+            }
+        }
+
+        [StTest("jobs: all stream exits preserve their maximum condition code", Reqs = "XMD-005,XMD-007,COM-018")]
+        public static void JobStreamsPreserveConditionCodes()
+        {
+            string source = Path.Combine(ReportService.HomeDir(), "jobs");
+            string root = Path.Combine(Path.GetTempPath(), "STERP-stream-test-" + Guid.NewGuid().ToString("N"));
+            string[] jobs = { "MONTHEND", "DDCOLL", "NIGHTLY", "PAYRUN", "STMTS",
+                "VATRET", "XMDCLOSE", "XMDCONV", "YEAREND" };
+            Directory.CreateDirectory(root);
+            try
+            {
+                File.Copy(Path.Combine(source, "JOBEND.cmd"), Path.Combine(root, "JOBEND.cmd"));
+                File.WriteAllText(Path.Combine(root, "SETENV.cmd"),
+                    "@echo off\r\nset JOBNAME=%~1\r\nset JOBRUNID=\r\nset P_RESTART=\r\n" +
+                    "set SYSOUT=%~dp0test.log\r\nset MAXCC=%TESTCC%\r\nset LASTCC=%TESTCC%\r\nexit /b 0\r\n");
+                File.WriteAllText(Path.Combine(root, "RUNSTEP.cmd"), "@echo off\r\nexit /b 0\r\n");
+                File.WriteAllText(Path.Combine(root, "sqlcmd.cmd"), "@echo off\r\necho RELEASED\r\nexit /b 0\r\n");
+                foreach (string job in jobs)
+                {
+                    File.Copy(Path.Combine(source, job + ".cmd"), Path.Combine(root, job + ".cmd"));
+                    foreach (int condition in new[] { 0, 4, 8, 12, 16 })
+                    {
+                        var info = new System.Diagnostics.ProcessStartInfo("cmd.exe", "/c " + job + ".cmd");
+                        info.WorkingDirectory = root;
+                        info.UseShellExecute = false;
+                        info.CreateNoWindow = true;
+                        info.RedirectStandardOutput = true;
+                        info.RedirectStandardError = true;
+                        info.EnvironmentVariables["TESTCC"] = condition.ToString();
+                        info.EnvironmentVariables["PATH"] = root + ";" + Environment.GetFolderPath(Environment.SpecialFolder.System);
+                        using (var process = System.Diagnostics.Process.Start(info))
+                        {
+                            string output = process.StandardOutput.ReadToEnd() + process.StandardError.ReadToEnd();
+                            process.WaitForExit();
+                            St.Eq(condition, process.ExitCode, job + " preserves MAXCC " + condition + ": " + output);
+                        }
+                    }
+                }
+            }
+            finally
+            {
+                Directory.Delete(root, true);
+            }
+        }
+
         /// <summary>Compiles a throw-away batch EXE that behaves like a COBOL batch main program.</summary>
         private static string BuildStubBatchProgram()
         {
             string exe = Path.Combine(SterpConfig.BinDir, "STRPTST.exe");
             string source =
                 "using System;using System.IO;class P{static int Main(string[] a){" +
+                "Console.WriteLine(\"STERP-I-HOME \"+Environment.CurrentDirectory);" +
                 "string o=\"\";foreach(string s in a){Console.WriteLine(\"STERP-I-0002 ARG \"+s);" +
                 "if(s.StartsWith(\"OUT=\"))o=s.Substring(4);}" +
                 "if(o.Length>0){Directory.CreateDirectory(Path.GetDirectoryName(o));" +

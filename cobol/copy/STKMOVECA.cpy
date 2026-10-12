@@ -34,6 +34,12 @@
       *> UOMCONV and reports the stock quantity actually posted in
       *> SM-STOCK-QTY together with the factor used, which is kept on
       *> the movement so a later packaging change cannot rewrite it.
+      *> SM-UNIT-COST is per stock unit. SM-VALUE-GBP accepts the
+      *> document's rounded GBP magnitude (zero means no total evidence
+      *> for legacy callers). On return both fields are the database
+      *> valuation: the value is a magnitude, as in legacy callers;
+      *> the database movement and history carry the signed value.
+      *> Pools, history and FIFO layers post atomically with stock.
       *>
       *> REASON CODES
       *>   STK0001 item not known / not usable in this state

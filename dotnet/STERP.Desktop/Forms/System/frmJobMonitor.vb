@@ -15,7 +15,7 @@ Public Class frmJobMonitor
     End Sub
 
     Protected Overrides Sub BuildFilters()
-        cboStatus = FilterList("&Status:", 120, "ALL", "RUNNING", "COMPLETED", "WARNING", "FAILED")
+        cboStatus = FilterList("&Status:", 120, "ALL", "RUNNING", "OK", "WARNING", "FAILED", "ABENDED")
         txtFrom = FilterEdit("Fro&m:", 80)
         txtFrom.Text = Fmt.Date(Date.Today.AddDays(-7))
         AddHandler cboStatus.SelectedIndexChanged, Sub(s As Object, e As EventArgs) LoadData()

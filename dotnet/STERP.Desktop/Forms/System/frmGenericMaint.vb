@@ -156,7 +156,8 @@ Partial Public Class frmGenericMaint
             DirectCast(ed, CheckBox).Checked = Fmt.Bool(value)
         ElseIf TypeOf ed Is DateTimePicker Then
             Dim d As DateTimePicker = DirectCast(ed, DateTimePicker)
-            If value Is Nothing OrElse IsDBNull(value) Then
+            If value Is Nothing OrElse IsDBNull(value) OrElse
+               (TypeOf value Is String AndAlso String.IsNullOrWhiteSpace(DirectCast(value, String))) Then
                 d.Checked = False
             Else
                 d.Value = Convert.ToDateTime(value)
@@ -173,7 +174,14 @@ Partial Public Class frmGenericMaint
             Dim d As DateTimePicker = DirectCast(ed, DateTimePicker)
             Return If(d.Checked, d.Value.ToString("yyyy-MM-dd"), Nothing)
         End If
-        Return ed.Text.Trim()
+        Dim text As String = ed.Text.Trim()
+        If text = "" AndAlso TypeOf ed.Tag Is DataRow Then
+            Select Case Fmt.Str(DirectCast(ed.Tag, DataRow)("DataType")).ToUpperInvariant()
+                Case "INT", "DEC", "DECIMAL", "MONEY", "PCT", "QTY", "RATE"
+                    Return Nothing
+            End Select
+        End If
+        Return text
     End Function
 
     ' ------------------------------------------------------------------ commands

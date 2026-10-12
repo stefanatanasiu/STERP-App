@@ -5,7 +5,7 @@ Imports STERP.Common
 ''' VAT facade: rates and determination (VATDET), the nine box return with its box
 ''' drill-down (VATRET9, fin.usp_VatBoxes, fin.usp_VatBoxDrill) and error correction
 ''' (VATERRC).  Nothing is typed into a box - every figure is an aggregation - and the
-''' MTD submission is written to a file because STERP has no HMRC connection.
+''' local filing hand-off is written to a file because STERP has no HMRC connection.
 ''' REQ: FIN-016, FIN-017, FIN-018, FIN-025, FIN-026, FIN-027, FIN-029
 ''' </summary>
 Public Class VatService
@@ -34,9 +34,17 @@ Public Class VatService
     Public Function Prepare(ByVal periodKey As String, ByVal basis As String) As CobolResult
         Dim ca As CommArea = Area(periodKey, basis)
         Dim r As CobolResult = Link("VATRET9", ca, "PREPARE")
-        For i As Integer = 1 To 9
-            _box(i - 1) = ca.GetDecimal("VR-BOX" & i)
-        Next
+        ClearReturn()
+        If r.Succeeded Then ReadArea(ca)
+        Return r
+    End Function
+
+    Private Sub ReadArea(ByVal ca As CommArea, Optional ByVal readBoxes As Boolean = True)
+        If readBoxes Then
+            For i As Integer = 1 To 9
+                _box(i - 1) = ca.GetDecimal("VR-BOX" & i)
+            Next
+        End If
         VatRegNo = ca.GetString("VR-VAT-REG-NO")
         ReturnStatus = ca.GetString("VR-RETURN-STATUS")
         StartDate = Fmt.Date(ca.GetDate("VR-START-DATE"))
@@ -45,8 +53,47 @@ Public Class VatService
         RecordCount = ca.GetInt("VR-RECORD-CNT")
         LateCount = ca.GetInt("VR-LATE-CNT")
         IsRepayment = (ca.GetString("VR-IS-REPAYMENT") = "Y")
-        Return r
+    End Sub
+
+    Private Sub ClearReturn()
+        Array.Clear(_box, 0, _box.Length)
+        VatRegNo = "" : ReturnStatus = "" : StartDate = "" : EndDate = "" : FilingDue = ""
+        RecordCount = 0 : LateCount = 0 : IsRepayment = False
+    End Sub
+
+    ''' <summary>Fresh, fail-closed authority; never use the shell's permission cache for an export.</summary>
+    Public Function CanAct(ByVal permissionCode As String) As Boolean
+        Dim row As DataRow = QueryRow("core.usp_CheckPermission", "@UserCode", User,
+            "@PermissionCode", permissionCode, "@CompanyCode", Company, "@SiteCode", Site)
+        Return row IsNot Nothing AndAlso Fmt.Bool(Col(row, "Allowed", False))
     End Function
+
+    ''' <summary>Review the latest persisted return without originating or recomputing it.</summary>
+    Public Sub LoadReturn(ByVal periodKey As String)
+        ClearReturn()
+        If Not (CanAct("FIN.VAT.PREPARE") OrElse CanAct("FIN.VAT.APPROVE") OrElse CanAct("FIN.VAT.SUBMIT")) Then
+            Throw New UnauthorizedAccessException("VAT return review is not permitted for this company/site.")
+        End If
+        Dim row As DataRow = QueryRow(
+            "SELECT TOP (1) r.*, p.StartDate, p.EndDate, p.FilingDueDate, " &
+            "(SELECT COUNT(DISTINCT d.VatTxnId) FROM fin.VatReturnDetail d WHERE d.VatReturnId=r.VatReturnId) AS Records, " &
+            "(SELECT COUNT(DISTINCT d.VatTxnId) FROM fin.VatReturnDetail d WHERE d.VatReturnId=r.VatReturnId AND d.IsLateEntry=1) AS Late " &
+            "FROM fin.VatReturn r JOIN fin.VatPeriod p ON p.CompanyCode=r.CompanyCode AND p.VatPeriodKey=r.VatPeriodKey " &
+            "WHERE r.CompanyCode=@c AND r.VatPeriodKey=@p ORDER BY r.Version DESC",
+            "@c", Company, "@p", periodKey)
+        If row Is Nothing Then Throw New InvalidOperationException("No prepared VAT return exists for " & Company & "/" & periodKey & ".")
+        For i As Integer = 1 To 9
+            _box(i - 1) = Fmt.Dec(row("Box" & i))
+        Next
+        VatRegNo = Fmt.Str(row("VatRegNo"))
+        ReturnStatus = Fmt.Str(row("Status"))
+        StartDate = Fmt.Date(Convert.ToDateTime(row("StartDate")))
+        EndDate = Fmt.Date(Convert.ToDateTime(row("EndDate")))
+        FilingDue = Fmt.Date(Convert.ToDateTime(row("FilingDueDate")))
+        RecordCount = Convert.ToInt32(row("Records"))
+        LateCount = Convert.ToInt32(row("Late"))
+        IsRepayment = BoxValue(5) < 0D
+    End Sub
 
     ''' <summary>The nine boxes straight from the aggregation, for the box arithmetic (FIN-025, FIN-026).</summary>
     Public Function Boxes(ByVal periodKey As String, ByVal basis As String) As DataRow
@@ -72,31 +119,58 @@ Public Class VatService
         Dim ca As CommArea = Area(periodKey, "")
         ca.SetString("VR-SUBMISSION-REF", submissionRef)
         ca.SetString("VR-HMRC-RESPONSE", response)
-        Return Link("VATRET9", ca, func, Session.NewCorrelationId())
+        Dim result As CobolResult = Link("VATRET9", ca, func, Session.NewCorrelationId())
+        If result.Succeeded Then
+            ReadArea(ca, func <> "SUBMIT")
+            If func = "FINALISE" Then LoadReturn(periodKey)
+        End If
+        Return result
     End Function
 
     ''' <summary>
-    ''' Writes the MTD submission file under run\work\vat and returns its path.  STERP has no
-    ''' HMRC connection: the file is the submission and its name is the receipt (FIN-018).
+    ''' Writes only a local hand-off file, then records that fact through VATRET9.
+    ''' No HMRC request or receipt is involved. Permission and frozen state are checked
+    ''' before touching the filesystem; a rejected native record removes the file.
     ''' </summary>
     Public Function WriteSubmissionFile(ByVal periodKey As String) As String
+        If Not CanAct("FIN.VAT.SUBMIT") Then
+            Throw New UnauthorizedAccessException("FIN.VAT.SUBMIT is required to write a local VAT file.")
+        End If
+        LoadReturn(periodKey)
+        If ReturnStatus <> "FINALISED" Then
+            Throw New InvalidOperationException("Only a finalised VAT return may be written to a local file.")
+        End If
+        If String.IsNullOrWhiteSpace(VatRegNo) Then Throw New InvalidOperationException("The frozen return has no VAT registration number.")
+        If Company.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0 OrElse
+           periodKey.IndexOfAny(System.IO.Path.GetInvalidFileNameChars()) >= 0 Then
+            Throw New ArgumentException("Invalid company or period key for a VAT filename.")
+        End If
         Dim dir As String = System.IO.Path.Combine(SterpConfig.RunDir, "work\vat")
-        System.IO.Directory.CreateDirectory(dir)
         Dim path As String = System.IO.Path.Combine(dir, "VAT-" & Company & "-" & periodKey & "-" &
-                                                    Date.Now.ToString("yyyyMMddHHmmss") & ".MTD")
+                                                    Guid.NewGuid().ToString("N").Substring(0, 12) & ".MTD")
         Dim sb As New Text.StringBuilder()
-        sb.AppendLine(SterpConfig.ProductName & " - MTD VAT RETURN")
+        sb.AppendLine(SterpConfig.ProductName & " - LOCAL VAT HAND-OFF (NOT TRANSMITTED)")
         sb.AppendLine("COMPANY   " & Company)
         sb.AppendLine("VRN       " & VatRegNo)
         sb.AppendLine("PERIODKEY " & periodKey)
         sb.AppendLine("PERIOD    " & StartDate & " TO " & EndDate)
-        sb.AppendLine("PREPARED  " & User & " " & Fmt.Stamp(Date.Now))
+        sb.AppendLine("EXPORTED  " & User & " " & Fmt.Stamp(Date.Now))
         For i As Integer = 1 To 9
             sb.AppendLine("BOX" & i & "      " & _box(i - 1).ToString("0.00", Fmt.UK).PadLeft(18))
         Next
         sb.AppendLine("RECORDS   " & RecordCount & "  LATE " & LateCount)
-        System.IO.File.WriteAllText(path, sb.ToString())
-        SterpLog.Info("VAT submission file written: " & path)
+        System.IO.Directory.CreateDirectory(dir)
+        Try
+            System.IO.File.WriteAllText(path, sb.ToString())
+            Dim result As CobolResult = Record("SUBMIT", periodKey, System.IO.Path.GetFileName(path),
+                                              "LOCAL FILE ONLY; NOT TRANSMITTED")
+            If Not result.Succeeded Then Throw New InvalidOperationException(result.Display)
+        Catch
+            If System.IO.File.Exists(path) Then System.IO.File.Delete(path)
+            Throw
+        End Try
+        LoadReturn(periodKey)
+        SterpLog.Info("Local VAT hand-off file written (not transmitted): " & path)
         Return path
     End Function
 

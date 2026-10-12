@@ -78,6 +78,37 @@ allowed, which is exactly the rule the demo loader follows.
 
 ## 2. Requirement traceability (FIN-001 .. FIN-030)
 
+### VAT GUI preparation, review and local filing
+
+Deploy `db\seed\12-fin-menu.sql` for the role-specific VAT menu aliases. No new role grants
+are needed: `VATOWNER` retains `FIN.VAT.PREPARE`; the independent `FINCTRL` retains
+`FIN.VAT.APPROVE` / `FIN.VAT.SUBMIT` and must **not** receive PREPARE (SOD-VAT).
+
+1. Sign on as `VATOWNER`, select company/site, then **Finance → VAT Return** (`FIN.VAT.RETURN`).
+   Enter the VAT period key and basis, click **Prepare (F5)**; focus a box and click
+   **Drill down** to review its sources. The persisted prepared return has status `DRAFT`.
+2. Sign on independently as `FINCTRL` with the same company/site, then **Finance →
+   VAT Review / Finalise** (`FIN.VAT.REVIEW`). Enter that period key and click
+   **Load saved return**, then **Finalise** and confirm. The native engine recomputes and
+   freezes the return; the screen reloads the persisted `FINALISED` boxes without PREPARE.
+3. In that form (or **Finance → VAT Local File (not transmitted)**, `FIN.VAT.LOCALFILE`),
+   select the exact finalised period and click **Local file (F10)**, then confirm.
+   The service rechecks scoped submit authority and reloads that company/period's frozen
+   VRN and all nine boxes before creating anything under `run\work\vat`.
+
+This is **only a local hand-off file and local filing record**, not an HMRC transmission,
+API request, tax payment or HMRC receipt. The existing native `SUBMITTED` status and
+`SubmissionRef` retain the local filename; `HmrcResponse` explicitly says
+`LOCAL FILE ONLY; NOT TRANSMITTED`. A native rejection removes the hand-off file.
+Unauthorised, missing, draft and already-recorded returns do not create files.
+Filesystem and database recording are not a distributed transaction: operators must
+reconcile the local file/reference after a machine or process failure.
+
+Dedicated regressions: `STERP.Tests.exe /filter:VatWorkflowGuiTests`, against a uniquely
+named `STERP_QA_VAT_` database only. They verify independent-controller menu reachability,
+reviewer GUI load, native finalisation, frozen output despite stale company/period cache
+and changed live sources, preparer drill, and no rejected-export files.
+
 All thirty identifiers are tagged `REQ:` in implementation code. To prove it:
 
 ```powershell

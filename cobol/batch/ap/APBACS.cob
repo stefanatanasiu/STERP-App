@@ -36,7 +36,7 @@
        INPUT-OUTPUT SECTION.
        FILE-CONTROL.
            SELECT BACS-FILE ASSIGN TO DYNAMIC WS-BACS-NAME
-               ORGANIZATION IS LINE SEQUENTIAL
+               ORGANIZATION IS SEQUENTIAL
                FILE STATUS IS WS-BACS-STATUS.
            SELECT RPT-FILE ASSIGN TO DYNAMIC WS-SPOOL-NAME
                ORGANIZATION IS LINE SEQUENTIAL
@@ -44,11 +44,24 @@
        DATA DIVISION.
        FILE SECTION.
        FD  BACS-FILE.
-       01  BACS-RECORD                 PIC X(106).
+       01  BACS-BYTE                   PIC X.
        FD  RPT-FILE REPORT IS R-APBACS.
        WORKING-STORAGE SECTION.
        COPY SQLIOCA.
        COPY APBATWK.
+       COPY APSVCARE.
+       01  BACS-RECORD                 PIC X(100).
+       01  WS-BACS-LENGTH              BINARY-LONG VALUE 80.
+       01  WS-BACS-INDEX               BINARY-LONG.
+       01  WS-HDR1                    PIC X(80).
+       01  WS-HDR2                    PIC X(80).
+       01  WS-PAY-DATE                 PIC 9(8).
+       01  WS-LABEL-DATE               PIC 9(8).
+       01  WS-LABEL-JULIAN             PIC 9(5).
+       01  WS-CREATION-JULIAN          PIC 9(5).
+       01  WS-EXPIRY-JULIAN            PIC 9(5).
+       01  WS-FILE-NUMBER              PIC 9(3).
+       01  WS-DEBIT-COUNT              PIC 9(7) VALUE 1.
        COPY STRPTWS.
        COPY STBATLOG.
        COPY CMDARGSCA REPLACING ==DFHCOMMAREA== BY ==WS-CMDARGS==.
@@ -231,6 +244,18 @@
            MOVE "APBACS" TO JL-JOB-NAME
            MOVE CM-COMMAND-LINE TO JL-ARGUMENTS
            CALL "JOBLOG" USING WS-JOBLOG
+           IF CA-RETURN-CODE OF WS-JOBLOG > 4
+               COMPUTE WS-RC = FUNCTION MAX(
+                   WS-RC, CA-RETURN-CODE OF WS-JOBLOG)
+               DISPLAY "STERP-E-0201 JOBLOG START: "
+                   FUNCTION TRIM(CA-MESSAGE OF WS-JOBLOG)
+           ELSE
+               IF JL-JOB-RUN-ID <= 0
+                   MOVE 12 TO WS-RC
+                   DISPLAY "STERP-E-0202 JOBLOG START returned "
+                           "no run id"
+               END-IF
+           END-IF
            MOVE "APBACS" TO BL-JOB-NAME.
        0200-EXIT.
            EXIT.
@@ -361,7 +386,7 @@
        0260-START.
            MOVE SPACES TO SQLIO-STMT
            STRING "SELECT ISNULL(r.Status,''), "
-                  "ISNULL(CONVERT(varchar(10),r.BacsInputDate,23),''),"
+                  "ISNULL(CONVERT(varchar(10),r.PayDate,23),''),"
                   " ISNULL(b.SortCode,''), ISNULL(b.AccountNumber,''), "
                   "ISNULL(b.Name,''), "
                   "ISNULL(b.BacsServiceUserNumber,''), "
@@ -394,11 +419,28 @@
            MOVE AP-COL(1) TO WS-PROP-STATUS
            MOVE AP-COL(2) TO AP-DC-TEXT
            IF AP-DC-TEXT NOT = SPACES
-               COMPUTE WS-PROC-DATE =
+               COMPUTE WS-PAY-DATE =
                    AP-DC-YYYY * 10000 + AP-DC-MM * 100 + AP-DC-DD
            ELSE
-               MOVE WS-TODAY-N TO WS-PROC-DATE
+               MOVE 8 TO WS-RC
+               DISPLAY "STERP-E-0263 Bacs value date is missing"
+               GO TO 0260-EXIT
            END-IF
+           INITIALIZE WS-APSVC
+           MOVE "ADDBUS" TO SVC-FUNC
+           MOVE WS-CO TO SVC-COMPANY
+           MOVE WS-USER TO SVC-USER
+           MOVE WS-TODAY-N TO SVC-DATE
+           MOVE WS-PAY-DATE TO SVC-DATE-1
+           MOVE -1 TO SVC-INT-1
+           MOVE "BACS" TO SVC-TEXT-1
+           CALL "APSVC" USING WS-APSVC
+           IF SVC-RC > 4 OR SVC-DATE-OUT = 0
+               MOVE 8 TO WS-RC
+               DISPLAY "STERP-E-0264 No Bacs processing date"
+               GO TO 0260-EXIT
+           END-IF
+           MOVE SVC-DATE-OUT TO WS-PROC-DATE
            COMPUTE WS-ORIG-SORT =
                FUNCTION NUMVAL(AP-COL(3))
            COMPUTE WS-ORIG-ACCOUNT =
@@ -516,29 +558,65 @@
        0360-EXIT.
            EXIT.
 
-      *>   Standard 18 volume and user header labels.  The bureau has
-      *>   never accepted anything but these literals.
+      *> Byte-sequential writes preserve padding without a process-wide
+      *> COB_LS_FIXED setting or binary variable-record length prefixes.
+       0375-WRITE-RECORD SECTION.
+           PERFORM VARYING WS-BACS-INDEX FROM 1 BY 1
+               UNTIL WS-BACS-INDEX > WS-BACS-LENGTH
+               WRITE BACS-BYTE FROM
+                   BACS-RECORD(WS-BACS-INDEX:1)
+           END-PERFORM
+           WRITE BACS-BYTE FROM X"0D"
+           WRITE BACS-BYTE FROM X"0A"
+           IF WS-BACS-STATUS NOT = "00"
+               MOVE 12 TO WS-RC
+               DISPLAY "STERP-E-0375 Cannot write Bacs record"
+           END-IF.
+
+      *> Single-processing-day Standard 18: 80-byte labels, 100-byte data.
        0380-WRITE-VOL-HEADER SECTION.
        0380-START.
            PERFORM 0390-JULIAN-DATE
+           MOVE WS-TODAY-N TO WS-LABEL-DATE
+           PERFORM 0391-LABEL-DATE
+           MOVE WS-LABEL-JULIAN TO WS-CREATION-JULIAN
+           MOVE WS-PAY-DATE TO WS-LABEL-DATE
+           PERFORM 0391-LABEL-DATE
+           MOVE WS-LABEL-JULIAN TO WS-EXPIRY-JULIAN
+           COMPUTE WS-FILE-NUMBER =
+               FUNCTION MOD(WS-PROP-ID, 999) + 1
+           MOVE 80 TO WS-BACS-LENGTH
            MOVE SPACES TO BACS-RECORD
-           STRING "VOL1" WS-SUN
-               DELIMITED BY SIZE INTO BACS-RECORD
-           WRITE BACS-RECORD
+           MOVE "VOL1" TO BACS-RECORD(1:4)
+           MOVE WS-SUN TO BACS-RECORD(5:6)
+           MOVE WS-SUN TO BACS-RECORD(42:6)
+           MOVE "1" TO BACS-RECORD(80:1)
+           PERFORM 0375-WRITE-RECORD
            MOVE SPACES TO BACS-RECORD
-           STRING "HDR1A" WS-SUN "S  " WS-SUN
-                  "0001000100          "
-               DELIMITED BY SIZE INTO BACS-RECORD
-           WRITE BACS-RECORD
+           MOVE "HDR1A" TO BACS-RECORD(1:5)
+           MOVE WS-SUN TO BACS-RECORD(6:6)
+           MOVE "S" TO BACS-RECORD(12:1)
+           MOVE WS-SUN TO BACS-RECORD(16:6)
+           MOVE WS-SUN TO BACS-RECORD(22:6)
+           MOVE "00010001000100" TO BACS-RECORD(28:14)
+           MOVE WS-CREATION-JULIAN TO BACS-RECORD(43:5)
+           MOVE WS-EXPIRY-JULIAN TO BACS-RECORD(49:5)
+           MOVE "000000" TO BACS-RECORD(55:6)
+           MOVE BACS-RECORD(1:80) TO WS-HDR1
+           PERFORM 0375-WRITE-RECORD
            MOVE SPACES TO BACS-RECORD
-           STRING "HDR2F020000100" DELIMITED BY SIZE
-               INTO BACS-RECORD
-           WRITE BACS-RECORD
+           MOVE "HDR2F0200000100" TO BACS-RECORD(1:15)
+           MOVE "00" TO BACS-RECORD(51:2)
+           MOVE BACS-RECORD(1:80) TO WS-HDR2
+           PERFORM 0375-WRITE-RECORD
            MOVE SPACES TO BACS-RECORD
-           STRING "UHL1 " AP-BX-JULIAN " 999999"
-                  "    0        1 DAILY  "
-               DELIMITED BY SIZE INTO BACS-RECORD
-           WRITE BACS-RECORD.
+           MOVE "UHL1" TO BACS-RECORD(1:4)
+           MOVE AP-BX-JULIAN TO BACS-RECORD(6:5)
+           MOVE "999999    " TO BACS-RECORD(11:10)
+           MOVE "00000000" TO BACS-RECORD(21:8)
+           MOVE "1 DAILY  " TO BACS-RECORD(29:9)
+           MOVE WS-FILE-NUMBER TO BACS-RECORD(38:3)
+           PERFORM 0375-WRITE-RECORD.
        0380-EXIT.
            EXIT.
 
@@ -556,6 +634,14 @@
                FUNCTION MOD(WS-DATE-YYYY, 100) * 1000 + WS-KX.
        0390-EXIT.
            EXIT.
+
+       0391-LABEL-DATE SECTION.
+           MOVE WS-LABEL-DATE TO WS-DATE-N
+           COMPUTE WS-LABEL-JULIAN =
+               FUNCTION MOD(WS-DATE-YYYY, 100) * 1000 +
+               FUNCTION INTEGER-OF-DATE(WS-LABEL-DATE) -
+               FUNCTION INTEGER-OF-DATE(
+                   WS-DATE-YYYY * 10000 + 101) + 1.
 
       *>----------------------------------------------------------------
        1000-PRODUCE-FILE SECTION.
@@ -748,7 +834,7 @@
        1400-EXIT.
            EXIT.
 
-      *>   Standard 18 detail: 106 bytes, transaction code 99 for a
+      *>   Standard 18 single-day detail: 100 bytes, code 99 for a
       *>   direct credit, amount in whole pence with no decimal point.
        1500-WRITE-BACS-RECORD SECTION.
        1500-START.
@@ -771,9 +857,9 @@
                   WS-ORIG-NAME
                   AP-BX-REF
                   AP-BX-NAME
-                  AP-BX-JULIAN
                DELIMITED BY SIZE INTO BACS-RECORD
-           WRITE BACS-RECORD
+           MOVE 100 TO WS-BACS-LENGTH
+           PERFORM 0375-WRITE-RECORD
            ADD AP-BX-PENCE TO AP-BX-TOTAL-PENCE
            ADD 1 TO AP-BX-ITEM-COUNT.
        1500-EXIT.
@@ -793,6 +879,12 @@
            IF AP-BX-ITEM-COUNT = 0
                GO TO 1950-EXIT
            END-IF
+           IF AP-BX-TOTAL-PENCE > 99999999999
+               MOVE 8 TO WS-RC
+               DISPLAY "STERP-E-1951 Bacs contra exceeds 11 digits"
+               GO TO 1950-EXIT
+           END-IF
+           MOVE AP-BX-TOTAL-PENCE TO AP-BX-PENCE
            MOVE SPACES TO BACS-RECORD
            STRING WS-ORIG-SORT
                   WS-ORIG-ACCOUNT
@@ -801,22 +893,26 @@
                   WS-ORIG-SORT
                   WS-ORIG-ACCOUNT
                   "    "
-                  AP-BX-TOTAL-PENCE
+                  AP-BX-PENCE
                   WS-ORIG-NAME
                   "CONTRA            "
                   WS-ORIG-NAME
-                  AP-BX-JULIAN
                DELIMITED BY SIZE INTO BACS-RECORD
-           WRITE BACS-RECORD
+           MOVE 100 TO WS-BACS-LENGTH
+           PERFORM 0375-WRITE-RECORD
+           MOVE 80 TO WS-BACS-LENGTH
+           MOVE WS-HDR1 TO BACS-RECORD
+           MOVE "EOF1" TO BACS-RECORD(1:4)
+           MOVE SPACES TO BACS-RECORD(55:6)
+           PERFORM 0375-WRITE-RECORD
+           MOVE WS-HDR2 TO BACS-RECORD
+           MOVE "EOF2" TO BACS-RECORD(1:4)
+           PERFORM 0375-WRITE-RECORD
            MOVE SPACES TO BACS-RECORD
            STRING "UTL1" AP-BX-TOTAL-PENCE AP-BX-TOTAL-PENCE
-                  AP-BX-ITEM-COUNT AP-BX-ITEM-COUNT
+                  WS-DEBIT-COUNT AP-BX-ITEM-COUNT
                DELIMITED BY SIZE INTO BACS-RECORD
-           WRITE BACS-RECORD
-           MOVE SPACES TO BACS-RECORD
-           STRING "EOF1A" WS-SUN "S  " WS-SUN
-               DELIMITED BY SIZE INTO BACS-RECORD
-           WRITE BACS-RECORD.
+           PERFORM 0375-WRITE-RECORD.
        1950-EXIT.
            EXIT.
 
@@ -825,7 +921,7 @@
            TERMINATE R-APBACS
            CLOSE RPT-FILE
            CLOSE BACS-FILE
-           IF T-BACS-COUNT > 0
+           IF T-BACS-COUNT > 0 AND WS-RC < 8
                PERFORM 0450-STAMP-RUN
            END-IF.
        0400-EXIT.
@@ -867,16 +963,32 @@
        0500-JOB-END SECTION.
        0500-START.
            MOVE WS-RC TO BL-RETURN-CODE
-           INITIALIZE WS-JOBLOG
+           IF JL-JOB-RUN-ID <= 0
+               GO TO 0500-EXIT
+           END-IF
            MOVE "END" TO CA-FUNCTION OF WS-JOBLOG
            MOVE WS-CO TO CA-COMPANY OF WS-JOBLOG
            MOVE WS-USER TO CA-USER OF WS-JOBLOG
            MOVE "APBACS" TO JL-JOB-NAME
+           EVALUATE TRUE
+               WHEN WS-RC > 4
+                   MOVE "FAILED" TO JL-STATUS
+               WHEN WS-RC = 0
+                   MOVE "COMPLETE" TO JL-STATUS
+               WHEN OTHER
+                   MOVE "WARNING" TO JL-STATUS
+           END-EVALUATE
            MOVE BL-WRITTEN-COUNT TO JL-ROWS-PROCESSED
            MOVE WS-RC TO JL-RETURN-CODE
            MOVE BL-SPOOL-FILE TO JL-SPOOL-FILE
-           MOVE WS-RC TO CA-RETURN-CODE OF WS-JOBLOG
+           MOVE BL-LOG-FILE TO JL-LOG-FILE
            CALL "JOBLOG" USING WS-JOBLOG
+           IF CA-RETURN-CODE OF WS-JOBLOG > 4
+               COMPUTE WS-RC = FUNCTION MAX(
+                   WS-RC, CA-RETURN-CODE OF WS-JOBLOG)
+               DISPLAY "STERP-E-0501 JOBLOG END: "
+                   FUNCTION TRIM(CA-MESSAGE OF WS-JOBLOG)
+           END-IF
            MOVE T-BACS-COUNT TO BL-COUNT-ED
            DISPLAY "STERP-I-0500 APBACS wrote " BL-COUNT-ED
                    " Bacs items to " FUNCTION TRIM(WS-BACS-NAME)

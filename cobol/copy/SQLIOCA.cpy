@@ -31,6 +31,8 @@
                88  SQLIO-BEGIN                   VALUE "BEGN".
                88  SQLIO-COMMIT                  VALUE "COMT".
                88  SQLIO-ROLLBACK                VALUE "ROLB".
+      *>   TSTA returns driver autocommit in ROWCOUNT: 1=on, 0=off.
+               88  SQLIO-TXN-STATE               VALUE "TSTA".
            05  SQLIO-CURSOR            PIC S9(9) COMP-5 VALUE 1.
            05  SQLIO-SQLCODE           PIC S9(9) COMP-5 VALUE 0.
                88  SQLIO-OK                      VALUE 0.

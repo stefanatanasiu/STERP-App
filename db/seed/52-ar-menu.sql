@@ -1,5 +1,5 @@
 /*  Debtors module user interface: the Debtors menu branch, the batch report catalogue, the generic
-    maintenance definitions for the simple sales-ledger masters, and the three permission codes the
+    maintenance definitions for the simple sales-ledger masters, and the permission codes the
     debtors screens need that the core catalogue does not already carry.  The top level 'AR' bar
     entry is created by 07-core-numbering-terms.sql; only its children belong here.
     Re-runnable (MERGE / IF NOT EXISTS).
@@ -12,6 +12,7 @@ GO
     is already seeded by 02-core-permissions.sql and is deliberately not repeated.  REQ: COM-002 */
 MERGE core.Permission AS t
 USING (VALUES
+ ('FIN.CONTROL.OVERRIDE','AR','Approve credit overrides above the controller threshold',1,1),
  ('AR.ENQUIRY','AR','Enquire on debtor accounts, ageing and statements',0,0),
  ('AR.ALLOC.CORRECT','AR','Reverse and re-apply a cash or credit allocation',0,0),
  ('AR.DD.MANAGE','AR','Manage Direct Debit mandates and collections',1,0),
@@ -54,13 +55,14 @@ SELECT r.RoleCode, g.NewCode, 'SEED'
  WHERE NOT EXISTS (SELECT 1 FROM core.RolePermission x WHERE x.RoleCode = r.RoleCode AND x.PermissionCode = g.NewCode);
 INSERT core.RolePermission (RoleCode, PermissionCode, CreatedBy)
 SELECT v.RoleCode, v.PermissionCode, 'SEED'
-  FROM (VALUES ('CREDMGR','AR.ALLOC.CORRECT'), ('FINCTRL','AR.ALLOC.CORRECT'), ('TREASURY','AR.DD.MANAGE')) AS v (RoleCode, PermissionCode)
+  FROM (VALUES ('CREDMGR','AR.ALLOC.CORRECT'), ('FINCTRL','AR.ALLOC.CORRECT'), ('TREASURY','AR.DD.MANAGE'),
+               ('FINCTRL','FIN.CONTROL.OVERRIDE')) AS v (RoleCode, PermissionCode)
  WHERE EXISTS (SELECT 1 FROM core.Role r WHERE r.RoleCode = v.RoleCode)
    AND NOT EXISTS (SELECT 1 FROM core.RolePermission x WHERE x.RoleCode = v.RoleCode AND x.PermissionCode = v.PermissionCode);
 GO
-/*  The Debtors menu.  The three hand written forms are frmCustomerEnquiry, frmReceiptEntry and
-    frmCreditControl; everything else is either the generic maintenance shell or the report
-    launcher primed with a core.ReportDef code.  REQ: COM-024 */
+/*  The Debtors menu and sales credit-request entry. Credit approval uses frmCreditOverride,
+    not writable generic maintenance. Reports use the launcher primed with a ReportDef code.
+    REQ: COM-024 */
 IF OBJECT_ID(N'core.MenuItem') IS NOT NULL
 BEGIN
     DECLARE @m table (MenuCode varchar(40), ParentMenuCode varchar(40), Caption varchar(60), FormClass varchar(80) NULL,
@@ -70,7 +72,8 @@ BEGIN
       ('AR.RECEIPT.ENTRY',  'AR', '&Receipt Entry...',             'frmReceiptEntry',    NULL,         'AR.RECEIPT.ENTER',   20, 'F6'),
       ('AR.CREDIT.WORKLIST','AR', 'Credit Control &Worklist...',   'frmCreditControl',   NULL,         'AR.ENQUIRY',         30, 'F7'),
       ('AR.CREDIT.MAINT',   'AR', '&Credit Limits and Holds...',   'frmGenericMaint',    'AR.CREDIT',  'AR.CREDIT.SET',      40, NULL),
-      ('AR.OVERRIDE.MAINT', 'AR', 'Credit &Overrides...',          'frmGenericMaint',    'AR.OVERRIDE','AR.CREDIT.OVERRIDE', 50, NULL),
+      ('AR.OVERRIDE.MAINT', 'AR', 'Credit &Overrides...',          'frmCreditOverride',  NULL,         'AR.CREDIT.OVERRIDE', 50, NULL),
+      ('AR.OVERRIDE.REQUEST','SO','Request Credit &Override...',  'frmCreditOverride',  'REQUEST',    'SO.ORDER.ENTER',     15, NULL),
       ('AR.DD.MAINT',       'AR', '&Direct Debit Mandates...',     'frmGenericMaint',    'AR.DDMANDATE','AR.DD.MANAGE',      60, NULL),
       ('AR.RPT',            'AR', 'Debtors Repor&ts',              NULL,                 NULL,          NULL,                90, NULL),
       ('AR.RPT.AGED',       'AR.RPT', '&Aged Debt...',             'frmReportLauncher',  'AGEDDEBT',   'AR.ENQUIRY',         10, NULL),

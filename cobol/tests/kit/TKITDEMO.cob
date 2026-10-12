@@ -56,6 +56,7 @@
      ELSE
          PERFORM Test-The-Kit-Was-Completed
          PERFORM Test-Genealogy-Names-The-Components
+         PERFORM Test-Genealogy-Kit-Scope
          PERFORM Test-One-Id-Per-Completion
      END-IF
      PERFORM TK-END
@@ -271,6 +272,29 @@
      END-IF.
 
 *>----------------------------------------------------------------
+*> A kit-specific trace must not append company-wide dispositions.
+ Test-Genealogy-Kit-Scope.
+     INITIALIZE Ws-Gen-Ca
+     MOVE "STC" TO GE-COMPANY
+     MOVE "QUALITY" TO GE-USER
+     MOVE "BACKWARD" TO GE-FUNCTION GN-DIRECTION
+     MOVE "ZZ-NO-SUCH-KIT" TO GN-KIT-REF
+     MOVE "Y" TO GN-INCLUDE-RET GN-INCLUDE-SCRAP
+     MOVE 5 TO GN-MAX-DEPTH
+     MOVE 1 TO GN-FROM-LINE
+     MOVE 20 TO GN-WIN-MAX
+     CALL "GENEALOG" USING Ws-Gen-Ca
+     MOVE "An unknown kit does not show other kits' dispositions"
+          TO TK-NAME
+     MOVE 0 TO TK-EXPECTED-N
+     MOVE GN-LINE-TOTAL TO TK-ACTUAL-N
+     PERFORM TK-ASSERT-NUM
+     MOVE "An empty kit trace names the no-genealogy refusal"
+          TO TK-NAME
+     MOVE 16 TO TK-EXPECTED-N
+     MOVE GE-RETURN-CODE TO TK-ACTUAL-N
+     PERFORM TK-ASSERT-NUM.
+
 *> COM-015 / CR2741.  One correlation id is never shared by two
 *> idempotent services.  The driver derives a sub-id per step from
 *> a thirty character stem, so no two completions of the kit may

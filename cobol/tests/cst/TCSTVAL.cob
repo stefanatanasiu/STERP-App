@@ -436,6 +436,30 @@
            MOVE SC-EL-MATERIAL TO TK-ACTUAL-N
            PERFORM TK-ASSERT-NUM
            PERFORM 1970-RESET-STD
+           MOVE "IMPACT" TO CA-FUNCTION OF WS-SC-CA
+           CALL "STDCOST" USING WS-SC-CA
+           MOVE "Impact retains the cost set lifecycle status"
+               TO TK-NAME
+           MOVE "ACTIVE" TO TK-EXPECTED-X
+           MOVE SC-STATUS TO TK-ACTUAL-X
+           PERFORM TK-ASSERT-STR
+           MOVE "Impact names the independent preparer" TO TK-NAME
+           MOVE "COSTCLRK" TO TK-EXPECTED-X
+           MOVE SC-PREPARED-BY TO TK-ACTUAL-X
+           PERFORM TK-ASSERT-STR
+           MOVE "Impact names the approving user" TO TK-NAME
+           MOVE "FINMGR" TO TK-EXPECTED-X
+           MOVE SC-APPROVED-BY TO TK-ACTUAL-X
+           PERFORM TK-ASSERT-STR
+           PERFORM 1970-RESET-STD
+           MOVE "IMPACT" TO CA-FUNCTION OF WS-SC-CA
+           MOVE "ZZNOSUCH" TO SC-COST-SET
+           CALL "STDCOST" USING WS-SC-CA
+           MOVE "Impact refuses an unknown cost set" TO TK-NAME
+           MOVE 16 TO TK-EXPECTED-N
+           MOVE CA-RETURN-CODE OF WS-SC-CA TO TK-ACTUAL-N
+           PERFORM TK-ASSERT-NUM
+           PERFORM 1970-RESET-STD
            MOVE "ZZNOSUCH" TO SC-COST-SET
            CALL "STDCOST" USING WS-SC-CA
            MOVE "An item with no standard in the set is not found"

@@ -61,10 +61,10 @@ namespace STERP.Tests
         {
             for (var type = target.GetType(); type != null; type = type.BaseType)
             {
-                var method = type.GetMethods(Members)
+                var method = type.GetMethods(Members | BindingFlags.Static)
                     .SingleOrDefault(m => m.Name == name && m.GetParameters().Length == arguments.Length);
                 if (method == null) continue;
-                try { return method.Invoke(target, arguments); }
+                try { return method.Invoke(method.IsStatic ? null : target, arguments); }
                 catch (TargetInvocationException ex)
                 {
                     if (ex.InnerException != null) throw ex.InnerException;
@@ -100,6 +100,30 @@ namespace STERP.Tests
             SterpSession.Current.CompanyCode = "STC";
             SterpSession.Current.SiteCode = site;
             SterpSession.Current.BusinessDate = new DateTime(2026, 10, 12);
+        }
+
+        [StTest("gui: job monitor filters use actual stored statuses", Reqs = "COM-018,XMD-007")]
+        public static void JobMonitorUsesStoredStatuses()
+        {
+            Sta(() =>
+            {
+                Context("FINCTRL");
+                using (var form = Screen("frmJobMonitor", true))
+                {
+                    var filter = Get<ComboBox>(form, "cboStatus");
+                    St.True(filter.Items.Cast<string>().SequenceEqual(
+                        new[] { "ALL", "RUNNING", "OK", "WARNING", "FAILED", "ABENDED" }),
+                        "all persisted job states are selectable, without the nonexistent COMPLETED state");
+                    Get<TextBox>(form, "txtFrom").Text = "01/01/2000";
+                    filter.SelectedItem = "OK";
+                    var rows = Get<DataGridView>(form, "Grid").DataSource as DataTable;
+                    St.True(rows != null, "the selected successful-job filter loads its result");
+                    St.Eq(new JobService().Runs(new DateTime(2000, 1, 1), "OK").Rows.Count, rows.Rows.Count,
+                        "the GUI retrieves exactly the successful runs");
+                    St.True(rows.Rows.Cast<DataRow>().All(row => Fmt.Str(row["Status"]) == "OK"),
+                        "the successful filter does not include warning/failure/running rows");
+                }
+            });
         }
 
         [StTest("gui: blank customer refresh clears every account result", Reqs = "AR-021,COM-024")]
@@ -456,6 +480,13 @@ namespace STERP.Tests
                         "the editor belongs to the selected record");
                     St.True(editors.Values.Where(e => Convert.ToBoolean(((DataRow)e.Tag)["IsKey"]))
                         .All(e => !e.Enabled), "existing primary keys remain protected");
+                    St.Eq(null, Call(form, "GetValue", editors["BatchSize"]),
+                        "an unset optional numeric field is posted as null, not an empty numeric string");
+                    St.Eq("", Call(form, "GetValue", editors["ParentRevision"]),
+                        "an empty code retains its existing empty-string semantics");
+                    editors["BatchSize"].Text = "0";
+                    St.Eq("0", Call(form, "GetValue", editors["BatchSize"]),
+                        "an explicitly keyed numeric zero is not replaced by null");
 
                     search.Text = "QA-NO-SUCH-BILL";
                     Call(form, "LoadList");
@@ -467,6 +498,8 @@ namespace STERP.Tests
 
                     Call(form, "NewClicked", null, EventArgs.Empty);
                     St.Eq("ADD", Get<string>(form, "_mode"), "the new-record action enters ADD mode");
+                    St.True(editors.Values.OfType<DateTimePicker>().All(d => !d.Checked),
+                        "dates with no metadata default are unset on a new record");
                     search.Text = "BOM-DEMO-B4TC";
                     Call(form, "LoadList");
 

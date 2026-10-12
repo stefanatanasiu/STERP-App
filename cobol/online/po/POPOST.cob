@@ -6,10 +6,10 @@
       *>              NOMINAL LEDGER.  LINES ARE STAGED IN
       *>              fin.JournalStage UNDER THE CALLER'S CORRELATION
       *>              ID AND THE POSTING IS COMPLETED BY
-      *>              fin.usp_PostJournal, WHICH OWNS THE TRANSACTION.
-      *>              A PURCHASING PROGRAM THEREFORE NEVER HOLDS AN
-      *>              OPEN SQLIO TRANSACTION ACROSS THE POSTING CALL -
-      *>              A PROCEDURE THAT THROWS WOULD DOOM IT.
+      *>              fin.usp_PostJournal, WHICH JOINS A CALLER UOW
+      *>              OR OWNS ITS TRANSACTION WHEN CALLED ALONE.
+      *>              RECEIPT HOLDS ITS SQLIO UOW THROUGH THE POSTING
+      *>              SO STOCK AND GRNI COMMIT OR ROLL BACK TOGETHER.
       *>              THE SAME CORRELATION ID POSTED TWICE RETURNS THE
       *>              ORIGINAL JOURNAL WITH WasDuplicate SET, SO A
       *>              RETRIED RECEIPT CANNOT ACCRUE GRNI TWICE.

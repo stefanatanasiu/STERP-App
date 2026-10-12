@@ -700,10 +700,18 @@
                   " SPOOL=" FUNCTION TRIM(WS-JOB-SPOOL)
                DELIMITED BY SIZE INTO WS-MSG
            IF NOT SMOKE-RUN
-               DISPLAY FUNCTION TRIM(WS-MSG)
-               DISPLAY " "
-               DISPLAY "PRESS ENTER TO RETURN TO THE CATALOGUE"
-               ACCEPT WS-OPT
+               MOVE "JOB COMPLETION" TO WS-HDR-TITLE
+               MOVE SPACES TO WS-PAGE-TXT WS-OPT
+               PERFORM VARYING WS-I FROM 1 BY 1 UNTIL WS-I > 15
+                   MOVE SPACES TO WS-DET-LINE(WS-I)
+               END-PERFORM
+               MOVE WS-MSG TO WS-DET-LINE(1)
+               MOVE "SPOOL / LOG:" TO WS-DET-LINE(3)
+               MOVE WS-JOB-SPOOL(1:78) TO WS-DET-LINE(4)
+               MOVE WS-JOB-SPOOL(79:32) TO WS-DET-LINE(5)
+               MOVE "ENTER=RETURN TO THE CATALOGUE" TO WS-LEGEND
+               DISPLAY SCR-FRAME
+               ACCEPT SCR-CMD
            END-IF.
        3300-EXIT.
            EXIT.
@@ -722,12 +730,12 @@
            IF WS-JOB-STREAM = "Y"
                STRING "cd /d """ FUNCTION TRIM(WS-HOME)
                       """ && call jobs\" FUNCTION TRIM(WS-JOB-PROG)
-                      ".cmd" FUNCTION TRIM(WS-TEXT)
+                      ".cmd " FUNCTION TRIM(WS-TEXT)
                    DELIMITED BY SIZE INTO WS-SYS-CMD
            ELSE
                STRING "cd /d """ FUNCTION TRIM(WS-HOME)
                       """ && bin\x86\" FUNCTION TRIM(WS-JOB-PROG)
-                      ".exe" FUNCTION TRIM(WS-TEXT)
+                      ".exe " FUNCTION TRIM(WS-TEXT)
                       " > run\logs\OPS-" FUNCTION TRIM(WS-JOB-PROG)
                       "-" WS-STAMP-14 ".log 2>&1"
                    DELIMITED BY SIZE INTO WS-SYS-CMD

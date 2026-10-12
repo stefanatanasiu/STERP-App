@@ -80,6 +80,9 @@
            05  WS-LEG                  PIC 9 VALUE 0.
            05  WS-TRANSIT-QTY          PIC S9(13)V9(6) VALUE 0.
            05  WS-HOLD-QTY             PIC S9(13)V9(6) VALUE 0.
+           05  WS-VALUE-IN             PIC S9(11)V99 VALUE 0.
+           05  WS-COUNTER-SITE         PIC X(10) VALUE SPACES.
+           05  WS-OWN-TRAN             PIC X VALUE "N".
        LINKAGE SECTION.
        COPY STKMOVECA.
        PROCEDURE DIVISION USING DFHCOMMAREA.
@@ -93,6 +96,11 @@
                GO TO 0000-EXIT
            END-IF
            PERFORM 0300-READ-ITEM
+           IF WS-INPUT-BAD
+               PERFORM 9500-REPORT
+               GO TO 0000-EXIT
+           END-IF
+           PERFORM 0800-BEGIN-MOVEMENT
            IF WS-INPUT-BAD
                PERFORM 9500-REPORT
                GO TO 0000-EXIT
@@ -111,6 +119,7 @@
                WHEN "RELEASE"  PERFORM 5000-RELEASE-HOLD
                WHEN OTHER      PERFORM 9100-BAD-FUNCTION
            END-EVALUATE
+           PERFORM 0850-END-MOVEMENT
            PERFORM 9500-REPORT.
        0000-EXIT.
            GOBACK.
@@ -136,6 +145,7 @@
                TO WS-FUNC
            MOVE 0 TO SM-STOCK-QTY SM-FACTOR SM-MOVEMENT-ID
            MOVE 0 TO SM-MOVEMENT-ID-2 SM-QTY-BEFORE SM-QTY-AFTER
+           MOVE SM-VALUE-GBP TO WS-VALUE-IN
            MOVE 0 TO SM-VALUE-GBP
       *>   CR2605.  SM-HOLD-ID is an OUTPUT of HOLD but an INPUT of
       *>   RELEASE - clearing it on every call threw away the hold the
@@ -481,10 +491,10 @@
            MOVE SPACES TO SQLIO-STMT
            STRING "EXEC inv.usp_PostStockMovement ?, ?, ?, ?, ?, ?, "
                   "?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, "
-                  "?, ?, ?, ?, ?, ?, ?, ?"
+                  "?, ?, ?, ?, ?, ?, ?, ?, ?, ?"
                DELIMITED BY SIZE INTO SQLIO-STMT
-           MOVE 30 TO SQLIO-PARM-CNT
-           PERFORM VARYING WS-JX FROM 1 BY 1 UNTIL WS-JX > 30
+           MOVE 32 TO SQLIO-PARM-CNT
+           PERFORM VARYING WS-JX FROM 1 BY 1 UNTIL WS-JX > 32
                MOVE SPACES TO SQLIO-PARM-VAL(WS-JX)
                MOVE "N" TO SQLIO-PARM-NULL(WS-JX)
            END-PERFORM
@@ -541,8 +551,35 @@
            ELSE
                MOVE WS-POST-CORR TO SQLIO-PARM-VAL(30)
            END-IF
+      *>   The document's rounded GBP amount is evidence, not a value
+      *>   reconstructed from a six-place unit price. Zero-initialized
+      *>   legacy callers still allow the pool to price the movement.
+           IF WS-VALUE-IN = 0
+               MOVE "Y" TO SQLIO-PARM-NULL(31)
+           ELSE
+               COMPUTE WS-QTY = FUNCTION ABS(WS-VALUE-IN)
+               MOVE WS-QTY TO SQLIO-NUM-EDIT
+               MOVE FUNCTION TRIM(SQLIO-NUM-EDIT)
+                   TO SQLIO-PARM-VAL(31)
+           END-IF
+           MOVE SPACES TO WS-COUNTER-SITE
+           IF WS-MOVE-TYPE = "TRANSFEROUT"
+               IF WS-FUNC = "TRANSFER" AND SM-VIA-TRANSIT = "Y"
+                   MOVE SM-SITE TO WS-COUNTER-SITE
+               ELSE
+                   MOVE SM-TO-SITE TO WS-COUNTER-SITE
+               END-IF
+           END-IF
+           IF WS-MOVE-TYPE = "TRANSFERIN"
+               MOVE SM-SITE TO WS-COUNTER-SITE
+           END-IF
+           IF WS-COUNTER-SITE = SPACES
+               MOVE "Y" TO SQLIO-PARM-NULL(32)
+           ELSE
+               MOVE WS-COUNTER-SITE TO SQLIO-PARM-VAL(32)
+           END-IF
            PERFORM 0750-NULL-BLANKS
-           MOVE 10 TO SQLIO-COL-CNT
+           MOVE 12 TO SQLIO-COL-CNT
            MOVE 1 TO SQLIO-CURSOR
            MOVE "SNGL" TO SQLIO-FUNC
            CALL "SQLIO" USING SQLIO-CA ITM-ROW
@@ -564,6 +601,13 @@
            IF ITM-COL(10)(1:1) = "1"
                MOVE "Y" TO SM-DUPLICATE
            END-IF
+           COMPUTE SM-VALUE-GBP =
+               FUNCTION ABS(FUNCTION NUMVAL(ITM-COL(11)))
+           COMPUTE SM-UNIT-COST =
+               FUNCTION NUMVAL(ITM-COL(12))
+           IF WS-MOVE-TYPE = "TRANSFEROUT"
+               COMPUTE WS-VALUE-IN = FUNCTION ABS(SM-VALUE-GBP)
+           END-IF
            MOVE WS-MOVE-TYPE TO SM-MOVEMENT-TYPE.
        0700-EXIT.
            EXIT.
@@ -580,6 +624,75 @@
                MOVE "Y" TO SQLIO-PARM-NULL(26)
            END-IF.
        0750-EXIT.
+           EXIT.
+
+      *>   One service call may post several physical legs. A failed
+      *>   destination must also undo the origin and its valuation.
+       0800-BEGIN-MOVEMENT SECTION.
+       0800-START.
+           MOVE "N" TO WS-OWN-TRAN
+           MOVE "TSTA" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA ITM-ROW
+           IF SQLIO-ERROR
+               PERFORM 9300-SQL-FAILED
+               GO TO 0800-EXIT
+           END-IF
+           IF SQLIO-ROWCOUNT = 1
+               MOVE "BEGN" TO SQLIO-FUNC
+               CALL "SQLIO" USING SQLIO-CA ITM-ROW
+               IF SQLIO-ERROR
+                   PERFORM 9300-SQL-FAILED
+                   GO TO 0800-EXIT
+               END-IF
+               MOVE "Y" TO WS-OWN-TRAN
+           END-IF
+           MOVE SPACES TO SQLIO-STMT
+           STRING "IF @@TRANCOUNT = 0 BEGIN TRANSACTION; "
+                  "SAVE TRANSACTION STKMOVE"
+               DELIMITED BY SIZE INTO SQLIO-STMT
+           MOVE 0 TO SQLIO-PARM-CNT SQLIO-COL-CNT
+           MOVE 1 TO SQLIO-CURSOR
+           MOVE "EXEC" TO SQLIO-FUNC
+           CALL "SQLIO" USING SQLIO-CA ITM-ROW
+           IF SQLIO-ERROR
+               PERFORM 9300-SQL-FAILED
+               PERFORM 0850-END-MOVEMENT
+           END-IF.
+       0800-EXIT.
+           EXIT.
+
+       0850-END-MOVEMENT SECTION.
+       0850-START.
+           IF WS-OWN-TRAN = "Y"
+               IF WS-ERROR = "Y"
+                   MOVE "ROLB" TO SQLIO-FUNC
+               ELSE
+                   MOVE "COMT" TO SQLIO-FUNC
+               END-IF
+               CALL "SQLIO" USING SQLIO-CA ITM-ROW
+               IF SQLIO-ERROR AND WS-ERROR NOT = "Y"
+                   PERFORM 9300-SQL-FAILED
+               END-IF
+               GO TO 0850-EXIT
+           END-IF
+           MOVE SPACES TO SQLIO-STMT
+           IF WS-ERROR = "Y"
+               STRING "IF XACT_STATE() = 1 "
+                      "ROLLBACK TRANSACTION STKMOVE"
+                   DELIMITED BY SIZE INTO SQLIO-STMT
+           END-IF
+           IF SQLIO-STMT NOT = SPACES
+               MOVE 0 TO SQLIO-PARM-CNT SQLIO-COL-CNT
+               MOVE 1 TO SQLIO-CURSOR
+               MOVE "EXEC" TO SQLIO-FUNC
+               CALL "SQLIO" USING SQLIO-CA ITM-ROW
+               IF SQLIO-ERROR AND WS-ERROR NOT = "Y"
+                   PERFORM 9300-SQL-FAILED
+               END-IF
+               MOVE "CLOS" TO SQLIO-FUNC
+               CALL "SQLIO" USING SQLIO-CA ITM-ROW
+           END-IF.
+       0850-EXIT.
            EXIT.
 
       *>----------------------------------------------------------------

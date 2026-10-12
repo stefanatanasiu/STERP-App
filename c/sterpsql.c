@@ -253,7 +253,8 @@ int STSQLCLS(int *cur)
     return 0;
 }
 
-/* transaction control: 1 = begin (autocommit off), 2 = commit, 3 = rollback */
+/* 1 = begin, 2 = commit, 3 = rollback, 4 = return driver autocommit in mode.
+ * @@TRANCOUNT is not sufficient to identify an ODBC-owned unit of work. */
 int STSQLTXN(int *mode)
 {
     SQLRETURN r = SQL_SUCCESS;
@@ -270,6 +271,12 @@ int STSQLTXN(int *mode)
         r = SQLEndTran(SQL_HANDLE_DBC, hdbc, SQL_ROLLBACK);
         SQLSetConnectAttr(hdbc, SQL_ATTR_AUTOCOMMIT, (SQLPOINTER)SQL_AUTOCOMMIT_ON, 0);
         break;
+    case 4: {
+        SQLUINTEGER autocommit = SQL_AUTOCOMMIT_ON;
+        r = SQLGetConnectAttr(hdbc, SQL_ATTR_AUTOCOMMIT, &autocommit, sizeof autocommit, NULL);
+        if (SQL_SUCCEEDED(r)) *mode = (autocommit == SQL_AUTOCOMMIT_ON) ? 1 : 0;
+        break;
+    }
     default:
         strcpy(lasterr, "SQLIO: invalid transaction mode");
         return -1;

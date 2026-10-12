@@ -64,6 +64,10 @@
                                      PERFORM 6000-TXN
                WHEN SQLIO-ROLLBACK   MOVE 3 TO WS-TXN-MODE
                                      PERFORM 6000-TXN
+               WHEN SQLIO-TXN-STATE  MOVE 4 TO WS-TXN-MODE
+                                     PERFORM 6000-TXN
+                                     MOVE WS-TXN-MODE
+                                         TO SQLIO-ROWCOUNT
                WHEN OTHER
                    MOVE -1 TO SQLIO-SQLCODE
                    MOVE "HY000" TO SQLIO-SQLSTATE

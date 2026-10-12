@@ -44,6 +44,8 @@ BEGIN
       ('FIN.JOURNAL.ENQ',   'FIN', 'Journal &Enquiry...',           'frmJournalEnquiry', NULL,            'FIN.ENQUIRY.VIEW',   20, 'F6'),
       ('FIN.PERIOD.CLOSE',  'FIN', '&Period Close Checklist...',    'frmPeriodClose',    NULL,            'FIN.PERIOD.VIEW',    30, 'F7'),
       ('FIN.VAT.RETURN',    'FIN', '&VAT Return...',                'frmVatReturn',      NULL,            'FIN.VAT.PREPARE',    40, 'F8'),
+      ('FIN.VAT.REVIEW',    'FIN', 'VAT Review / &Finalise...',     'frmVatReturn',      NULL,            'FIN.VAT.APPROVE',    41, NULL),
+      ('FIN.VAT.LOCALFILE', 'FIN', 'VAT &Local File (not transmitted)...', 'frmVatReturn', NULL,          'FIN.VAT.SUBMIT',     42, NULL),
       ('FIN.BANK.RECON',    'FIN', '&Bank Reconciliation...',       'frmBankRecon',      NULL,            'FIN.BANK.RECONCILE', 50, 'F9'),
       ('FIN.MAINT',         'FIN', 'Finance &Maintenance',          NULL,                NULL,             NULL,                70, NULL),
       ('FIN.MAINT.ACCOUNT', 'FIN.MAINT', 'Chart of &Accounts...',   'frmGenericMaint',   'FIN.ACCOUNT',   'FIN.ACCOUNT.MAINT',  10, NULL),

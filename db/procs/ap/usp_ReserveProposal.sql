@@ -68,6 +68,14 @@ BEGIN
            AND (oi.ItemType <> 'INVOICE' OR oi.DueDate <= @cutoff)
            AND EXISTS (SELECT 1 FROM ap.PaymentProposal p WHERE p.ProposalId = @ProposalId);
 
+        /* A credit can offset only its own supplier's eligible invoices, never another payee. */
+        UPDATE c SET Excluded = 1, Reason = 'No eligible invoice for this supplier to apply the credit against'
+          FROM @cand c
+         WHERE c.Excluded = 0 AND c.ItemType = 'CREDIT'
+           AND NOT EXISTS (SELECT 1 FROM @cand i WHERE i.SupplierCode = c.SupplierCode
+                            AND i.ItemType = 'INVOICE' AND i.Excluded = 0
+                            AND i.ResidualGBP - i.ReservedGBP - i.DiscountGBP > 0);
+
         INSERT ap.PaymentProposalLine (ProposalId, LineNum, SupplierCode, OpenItemId, DocumentNumber, SupplierBankId,
                                        CurrencyCode, GrossAmount, GrossAmountGBP, DiscountGBP, CreditAppliedGBP, NetPayGBP,
                                        IsExcluded, ExclusionReason, IsReservedElsewhere, ReservedAmountGBP)

@@ -379,7 +379,8 @@
        2400-START.
            MOVE SPACES TO SQLIO-STMT
            STRING "SELECT Status, Purpose, ISNULL(PreparedBy,''), "
-                  "ISNULL(ComparedToSetCode,'') FROM cst.CostSet "
+                  "ISNULL(ComparedToSetCode,''), ISNULL(ApprovedBy,'') "
+                  "FROM cst.CostSet "
                   "WHERE CompanyCode = ? AND CostSetCode = ?"
                DELIMITED BY SIZE INTO SQLIO-STMT
            MOVE 2 TO SQLIO-PARM-CNT
@@ -387,14 +388,16 @@
            MOVE SC-COST-SET TO SQLIO-PARM-VAL(2)
            MOVE "N" TO SQLIO-PARM-NULL(1)
            MOVE "N" TO SQLIO-PARM-NULL(2)
-           MOVE 4 TO SQLIO-COL-CNT
+           MOVE 5 TO SQLIO-COL-CNT
            PERFORM 8000-SINGLE-ROW
            IF WS-GOT-ROW
                MOVE WS-COL(1) TO WS-SET-STATUS
+               MOVE WS-SET-STATUS TO SC-STATUS
                MOVE WS-COL(2) TO WS-SET-PURPOSE
                MOVE WS-COL(3) TO WS-PREPARER
                MOVE WS-SET-PURPOSE TO SC-PURPOSE
                MOVE WS-PREPARER TO SC-PREPARED-BY
+               MOVE WS-COL(5) TO SC-APPROVED-BY
                IF SC-COMPARE-SET = SPACES
                    MOVE WS-COL(4) TO SC-COMPARE-SET
                END-IF
@@ -409,6 +412,19 @@
       *>----------------------------------------------------------------
        3000-IMPACT SECTION.
        3000-START.
+           PERFORM 2400-READ-SET
+           IF WS-SQL-BAD OR WS-INPUT-BAD
+               GO TO 3000-EXIT
+           END-IF
+           IF NOT WS-GOT-ROW
+               MOVE "CST0402" TO CA-REASON-CODE
+               MOVE SPACES TO CA-MESSAGE
+               STRING "Cost set " FUNCTION TRIM(SC-COST-SET)
+                      " was not found"
+                   DELIMITED BY SIZE INTO CA-MESSAGE
+               MOVE 16 TO CA-RETURN-CODE
+               GO TO 3000-EXIT
+           END-IF
            MOVE SPACES TO SQLIO-STMT
            STRING "SELECT COUNT(*), ISNULL(SUM(ic.QtyOnHand),0), "
                   "ISNULL(SUM(ic.QtyOnHand * (sc.TotalUnitCost - "

@@ -10,9 +10,9 @@
       *>                firm unshipped 350.00, shipped unbilled
       *>                150.00, deposit 50.00  ->  exposure 1,150.00
       *>                against a limit of 1,100.00
-      *>              CREDCHK OWNS NO TRANSACTION, SO THE WHOLE SUITE
-      *>              RUNS INSIDE ONE BEGN ... ROLB AND LEAVES NOTHING
-      *>              BEHIND.
+      *>              THE SUITE RUNS INSIDE ONE OUTER BEGN ... ROLB;
+      *>              OVERRIDE REQUEST/APPROVAL USE SAVEPOINTS IN
+      *>              THE CALLER'S TRANSACTION AND LEAVE NOTHING.
       *>----------------------------------------------------------------
       *> 2026-10-06 STERP ORIGINAL
       *>================================================================
@@ -197,7 +197,7 @@
            INITIALIZE WS-CK-CA
            MOVE "STC" TO CA-COMPANY OF WS-CK-CA
            MOVE "RDG" TO CA-SITE OF WS-CK-CA
-           MOVE "ARCLERK" TO CA-USER OF WS-CK-CA
+           MOVE "SALESREP" TO CA-USER OF WS-CK-CA
            MOVE 20261015 TO CA-BUSINESS-DATE OF WS-CK-CA
            MOVE "ZZCRED1" TO CK-CUSTOMER
            MOVE "ORDER" TO CK-CHECK-POINT

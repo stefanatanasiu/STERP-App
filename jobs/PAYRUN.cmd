@@ -48,7 +48,7 @@ goto EOJ
 rem ---------------------------------------------------------------
 :STEP030
 rem //*  BACS STANDARD 18 PAYMENT FILE (AP-015)
-call "%~dp0RUNSTEP.cmd" STEP030 APBACS "CO=%P_CO% RUN=%P_RUN% ENTRYDATE=%P_ASAT% MODE=%P_MODE% USER=%P_USER%"
+call "%~dp0RUNSTEP.cmd" STEP030 APBACS "CO=%P_CO% RUN=%P_RUN% MODE=%P_MODE% USER=%P_USER%"
 if %LASTCC% GEQ 8 goto ABEND
 
 rem ---------------------------------------------------------------
@@ -61,8 +61,8 @@ goto EOJ
 :ABEND
 echo //*  STREAM TERMINATED - NO PAYMENT FILE HAS BEEN RELEASED>> "%SYSOUT%"
 call "%~dp0JOBEND.cmd" %MAXCC%
-endlocal & exit /b 8
+endlocal & exit /b %MAXCC%
 
 :EOJ
 call "%~dp0JOBEND.cmd" %MAXCC%
-endlocal & exit /b 0
+endlocal & exit /b %MAXCC%

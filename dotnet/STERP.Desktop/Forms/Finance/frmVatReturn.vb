@@ -22,6 +22,10 @@ Public Class frmVatReturn
     Private _cboBasis As ComboBox
     Private _grid As DataGridView
     Private _selectedBox As Integer
+    Private _prepareButton As Button
+    Private _finaliseButton As Button
+    Private _fileButton As Button
+    Private _canPrepare As Boolean
 
     Public Sub New()
         Me.Text = "VAT Return - Nine Boxes"
@@ -32,10 +36,16 @@ Public Class frmVatReturn
         _cboBasis = UiStyle.Picker(Me, 244, 6, 90)
         _cboBasis.Items.AddRange(New String() {"INVOICE", "CASH"})
         _cboBasis.SelectedIndex = 0
-        AddHandler UiStyle.Push(Me, "&Prepare (F5)", 344, 6, 86).Click, AddressOf PrepareClicked
+        _prepareButton = UiStyle.Push(Me, "&Prepare (F5)", 344, 6, 86)
+        _prepareButton.Enabled = False
+        AddHandler _prepareButton.Click, AddressOf PrepareClicked
         AddHandler UiStyle.Push(Me, "&Drill down", 436, 6, 80).Click, AddressOf DrillClicked
-        AddHandler UiStyle.Push(Me, "Fi&nalise", 522, 6, 70).Click, AddressOf FinaliseClicked
-        AddHandler UiStyle.Push(Me, "&Submit to file (F10)", 598, 6, 126).Click, AddressOf SubmitClicked
+        _finaliseButton = UiStyle.Push(Me, "Fi&nalise", 522, 6, 70)
+        _finaliseButton.Enabled = False
+        AddHandler _finaliseButton.Click, AddressOf FinaliseClicked
+        _fileButton = UiStyle.Push(Me, "&Local file (F10)", 598, 6, 126)
+        _fileButton.Enabled = False
+        AddHandler _fileButton.Click, AddressOf SubmitClicked
         AddHandler UiStyle.Push(Me, "&Error correction", 730, 6, 94).Click, AddressOf CorrectionClicked
         For i As Integer = 0 To 8
             Dim x As Integer = If(i < 5, 8, 424), y As Integer = 42 + (i Mod 5) * 26
@@ -47,11 +57,20 @@ Public Class frmVatReturn
             Dim boxNo As Integer = i + 1
             AddHandler _box(i).Enter, Sub(sender As Object, e As EventArgs) _selectedBox = boxNo
         Next
+        AddHandler UiStyle.Push(Me, "&Load saved return", 424, 148, 130).Click, AddressOf LoadClicked
         _grid = New DataGridView()
         _grid.SetBounds(8, 180, 814, 310)
         _grid.Anchor = AnchorStyles.Top Or AnchorStyles.Left Or AnchorStyles.Right Or AnchorStyles.Bottom
         GridHelper.Style(_grid)
         Me.Controls.Add(_grid)
+        AddHandler _txtPeriod.TextChanged, Sub(sender As Object, e As EventArgs)
+                                              For Each box As TextBox In _box
+                                                  box.Text = ""
+                                              Next
+                                              _selectedBox = 0
+                                              GridHelper.Bind(_grid, Nothing)
+                                              SetStatus("Period changed. Prepare or load the selected return.", "")
+                                          End Sub
     End Sub
 
     Protected Overrides Sub OnLoad(ByVal e As EventArgs)
@@ -62,11 +81,22 @@ Public Class frmVatReturn
             Guard(Sub() t = _svc.VatPeriods())
             If t IsNot Nothing AndAlso t.Rows.Count > 0 Then _txtPeriod.Text = Fmt.Str(t.Rows(0)("VatPeriodKey"))
         End If
-        If _txtPeriod.Text <> "" Then PrepareClicked(Nothing, EventArgs.Empty)
+        Guard(Sub()
+                  _canPrepare = _svc.CanAct("FIN.VAT.PREPARE")
+                  _prepareButton.Enabled = _canPrepare
+                  _cboBasis.Enabled = _canPrepare
+                  _finaliseButton.Enabled = _svc.CanAct("FIN.VAT.APPROVE")
+                  _fileButton.Enabled = _svc.CanAct("FIN.VAT.SUBMIT")
+              End Sub)
+        If _txtPeriod.Text <> "" Then OnRefreshKey()
     End Sub
 
     Protected Overrides Sub OnRefreshKey()
-        PrepareClicked(Nothing, EventArgs.Empty)
+        If _canPrepare Then
+            PrepareClicked(Nothing, EventArgs.Empty)
+        Else
+            LoadClicked(Nothing, EventArgs.Empty)
+        End If
     End Sub
 
     Protected Overrides Sub OnConfirm()
@@ -92,21 +122,42 @@ Public Class frmVatReturn
         Guard(Sub()
                   _selectedBox = 0
                   Dim r As CobolResult = _svc.Prepare(PeriodKey(), Convert.ToString(_cboBasis.SelectedItem))
-                  For i As Integer = 1 To 9
-                      _box(i - 1).Text = Fmt.Money(_svc.BoxValue(i))
-                  Next
-                  GridHelper.Bind(_grid, Nothing)
+                  DisplayReturn()
                   If r.IsNotFound Then
                       SetStatus("VATRET9 did not answer for " & PeriodKey() & " (" & r.ReasonCode &
                                 "); the boxes come from fin.usp_VatBoxes.", "!  WARNING")
                       Return
                   End If
                   If Not ShowResult(r) Then Return
-                  SetStatus("VRN " & _svc.VatRegNo & ", " & _svc.StartDate & " to " & _svc.EndDate & ", filing due " &
-                            _svc.FilingDue & ".  " & _svc.RecordCount & " record(s), " & _svc.LateCount &
-                            " late.  Return " & _svc.ReturnStatus & ", net " & Fmt.Money(_svc.BoxValue(5)) &
-                            If(_svc.IsRepayment, " REPAYMENT", " PAYABLE") & ".",
-                            If(_svc.LateCount > 0, "!  WARNING", "OK"))
+                  ReturnStatus()
+              End Sub)
+    End Sub
+
+    Private Sub DisplayReturn()
+        For i As Integer = 1 To 9
+            _box(i - 1).Text = Fmt.Money(_svc.BoxValue(i))
+        Next
+        _selectedBox = 0
+        GridHelper.Bind(_grid, Nothing)
+    End Sub
+
+    Private Sub ReturnStatus()
+        SetStatus("VRN " & _svc.VatRegNo & ", " & _svc.StartDate & " to " & _svc.EndDate &
+                  ", filing due " & _svc.FilingDue & ". " & _svc.RecordCount & " record(s), " &
+                  _svc.LateCount & " late. Return " & _svc.ReturnStatus &
+                  ", net " & Fmt.Money(_svc.BoxValue(5)) &
+                  If(_svc.IsRepayment, " REPAYMENT", " PAYABLE") & ". Local filing only; not transmitted.", "OK")
+    End Sub
+
+    Private Sub LoadClicked(ByVal sender As Object, ByVal e As EventArgs)
+        For Each box As TextBox In _box
+            box.Text = ""
+        Next
+        GridHelper.Bind(_grid, Nothing)
+        Guard(Sub()
+                  _svc.LoadReturn(PeriodKey())
+                  DisplayReturn()
+                  ReturnStatus()
               End Sub)
     End Sub
 
@@ -133,24 +184,24 @@ Public Class frmVatReturn
     Private Sub FinaliseClicked(ByVal sender As Object, ByVal e As EventArgs)
         If Not Confirm("Finalise the VAT return for " & PeriodKey() & "?  The figures and their detail are frozen.") Then Return
         Guard(Sub()
-                  If ShowResult(_svc.Record("FINALISE", PeriodKey(), "", "")) Then PrepareClicked(Nothing, EventArgs.Empty)
+                  If ShowResult(_svc.Record("FINALISE", PeriodKey(), "", "")) Then
+                      DisplayReturn()
+                      ReturnStatus()
+                  End If
               End Sub)
     End Sub
 
-    ''' <summary>The written file is the submission and its name is the receipt reference (FIN-018).</summary>
+    ''' <summary>Local hand-off and local record only; never an HMRC transmission or receipt.</summary>
     Private Sub SubmitClicked(ByVal sender As Object, ByVal e As EventArgs)
-        If Not Confirm("Write the MTD submission file for " & PeriodKey() & " and record the submission?") Then Return
+        If Not Confirm("Write a LOCAL VAT hand-off file for " & PeriodKey() &
+                       " and record local filing? Nothing will be transmitted to HMRC.") Then Return
         Guard(Sub()
                   Dim path As String = _svc.WriteSubmissionFile(PeriodKey())
                   Dim name As String = System.IO.Path.GetFileName(path)
-                  Dim r As CobolResult = _svc.Record("SUBMIT", PeriodKey(), name, "WRITTEN TO FILE " & path)
-                  If Not ShowResult(r) Then
-                      SetStatus("The file was written to " & path & " but the return was not marked submitted.", "!  WARNING")
-                      Return
-                  End If
-                  Info("The MTD submission file has been written to:" & vbCrLf & vbCrLf & path & vbCrLf & vbCrLf &
-                       "Send it to HMRC through the approved filing service.", "VAT Submission")
-                  SetStatus("Submitted " & PeriodKey() & ", receipt reference " & name & ".", "OK")
+                  DisplayReturn()
+                  Info("The LOCAL VAT hand-off file has been written to:" & vbCrLf & vbCrLf & path & vbCrLf & vbCrLf &
+                       "NOT transmitted to HMRC. This is a local file reference, not an HMRC receipt.", "Local VAT File")
+                  SetStatus("Local file recorded for " & PeriodKey() & ": " & name & ". NOT transmitted.", "OK")
               End Sub)
     End Sub
 

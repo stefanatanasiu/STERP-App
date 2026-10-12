@@ -15,8 +15,11 @@ BEGIN
                       FormArgument varchar(60) NULL, PermissionCode varchar(60) NULL, SortOrder int, Shortcut varchar(20) NULL);
     INSERT @m VALUES
       ('AP.SUPPLIER.VERIFY','AP', '&Supplier and Bank Verification...', 'frmSupplierVerify',  NULL,      'AP.SUPPLIER.VIEW',    10, 'F5'),
+      ('AP.SUPPLIER.BANKAPP','AP','Approve Supplier Bank Changes...',   'frmSupplierVerify',  NULL,      'AP.BANK.APPROVE',     15, NULL),
       ('AP.INVOICE.REG',    'AP', '&Invoice Register and Matching...',  'frmInvoiceRegister', NULL,      'AP.INVOICE.ENTER',    20, 'F6'),
       ('AP.PAYMENT.RUN',    'AP', '&Payment Proposal and Run...',       'frmPaymentRun',      NULL,      'AP.PAYMENT.PROPOSE',  30, 'F7'),
+      ('AP.PAYMENT.AUTH',   'AP', 'Authorise Payment &Run...',          'frmPaymentRun',      NULL,      'AP.PAYMENT.APPROVE',  31, NULL),
+      ('AP.PAYMENT.REL',    'AP', 'Release Payment Run...',             'frmPaymentRun',      NULL,      'AP.PAYMENT.RELEASE',  32, NULL),
       ('AP.RPT',            'AP', 'Creditors Repor&ts',                 NULL,                 NULL,       NULL,                 90, NULL),
       ('AP.RPT.AGED',       'AP.RPT', '&Aged Creditors...',             'frmReportLauncher',  'APAGED',  'AP.ENQUIRY.VIEW',     10, NULL),
       ('AP.RPT.REMIT',      'AP.RPT', '&Remittance Advices...',         'frmReportLauncher',  'APREMIT', 'AP.PAYMENT.RELEASE',  20, NULL),
@@ -44,8 +47,8 @@ USING (VALUES
   'Open item ageing as at a chosen date with blocked, disputed and in-flight amounts shown separately, and the cash requirement by due band.'),
  ('APREMIT','AP','Remittance advices','APREMIT','CO,RUN','AP.PAYMENT.RELEASE','AP-015',
   'Remittance advice for every payment in an approved run, showing the invoices, credits and deductions settled. Reissue has no cash effect.'),
- ('APBACS','AP','Bacs payment file, Standard 18','APBACS','CO,RUN,ENTRYDATE','AP.PAYMENT.RELEASE','AP-013, AP-026',
-  'Bacs Standard 18 payment file for an approved run, written to run\bacs with its hash totals and processing calendar.'),
+ ('APBACS','AP','Bacs payment file, Standard 18','APBACS','CO,RUN','AP.PAYMENT.RELEASE','AP-013, AP-026',
+  'Local Standard 18 file for an approved run. Value date is the stored PayDate; the Bacs calendar derives the preceding processing day. No date override or transmission.'),
  ('APPPR','AP','Payment practices and performance','APPPR','CO,FROM,TO','AP.PRACTICES.REPORT','AP-028, AP-030, RPT-018',
   'Half-yearly reporting duty: average days to pay, the 30, 31-60 and 61 day bands, the proportion not paid within terms and the disputed share.'),
  ('APVAT6M','AP','Six month unpaid input VAT','APVAT6M','CO,ASAT,MODE','AP.ENQUIRY.VIEW','AP-025, AP-029',

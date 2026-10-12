@@ -58,8 +58,8 @@ goto EOJ
 echo //*  STREAM TERMINATED BY COND CODE %LASTCC%>> "%SYSOUT%"
 echo //*  THE YEAR IS NOT CLOSED - CORRECT AND RESTART THE STEP>> "%SYSOUT%"
 call "%~dp0JOBEND.cmd" %MAXCC%
-endlocal & exit /b 8
+endlocal & exit /b %MAXCC%
 
 :EOJ
 call "%~dp0JOBEND.cmd" %MAXCC%
-endlocal & exit /b 0
+endlocal & exit /b %MAXCC%

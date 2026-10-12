@@ -22,6 +22,7 @@ BEGIN
       ('BOM.WHEREUSED',  'BOM', '&Where Used Enquiry...',    'frmBomWhereUsed',   NULL,            'BOM.WHEREUSED.VIEW',  50, NULL),
       ('BOM.COMPARE',    'BOM', 'Revision &Comparison...',   'frmBomExplosion',   'COMPARE',       'BOM.VIEW',            60, NULL),
       ('BOM.CHANGE',     'BOM', 'Engineering &Changes...',   'frmGenericMaint',   'BOM.CHANGE',    'BOM.CHANGE.APPROVE',  70, NULL),
+      ('BOM.CHANGE.PREVIEW','BOM','Bulk Change &Preview...', 'frmBomBulkPreview', NULL,            'BOM.VIEW',            75, NULL),
       ('BOM.RPT.INDENT', 'BOM', 'Indented Parts &List...',   'frmReportLauncher', 'BOMRP010',      'BOM.VIEW',            90, NULL),
       ('BOM.RPT.COSTED', 'BOM', 'Costed E&xplosion...',      'frmReportLauncher', 'BOMRP020',      'BOM.COST.ROLLUP',    100, NULL);
 

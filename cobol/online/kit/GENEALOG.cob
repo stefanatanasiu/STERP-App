@@ -509,6 +509,7 @@
        " AND (? = '' OR i.ComponentItemCode = ?)"
        " AND (? = '' OR ISNULL(i.LotCode,'') = ?)"
        " AND (? = '' OR ISNULL(i.SerialNo,'') = ?)"
+       " AND (? = '' OR i.KitRef = ?)"
        " ORDER BY i.KitIssueId"
          DELIMITED BY SIZE INTO SQLIO-STMT
      MOVE CA-COMPANY TO SQLIO-PARM-VAL (1)
@@ -528,7 +529,9 @@
      MOVE GN-LOT-CODE TO SQLIO-PARM-VAL (7)
      MOVE GN-SERIAL-NO TO SQLIO-PARM-VAL (8)
      MOVE GN-SERIAL-NO TO SQLIO-PARM-VAL (9)
-     MOVE 9 TO SQLIO-PARM-CNT
+     MOVE GN-KIT-REF TO SQLIO-PARM-VAL (10)
+     MOVE GN-KIT-REF TO SQLIO-PARM-VAL (11)
+     MOVE 11 TO SQLIO-PARM-CNT
      MOVE 10 TO SQLIO-COL-CNT
      PERFORM VARYING Ws-W FROM 1 BY 1 UNTIL Ws-W > 20
          MOVE 100 TO SQLIO-COL-WIDTH (Ws-W)

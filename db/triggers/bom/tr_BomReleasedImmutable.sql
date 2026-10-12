@@ -51,6 +51,43 @@ BEGIN
     END
 END
 GO
+CREATE OR ALTER TRIGGER bom.tr_BomHeaderReleasedImmutable ON bom.BomHeader
+AFTER UPDATE, DELETE
+AS
+BEGIN
+    SET NOCOUNT ON;
+    IF EXISTS (
+        SELECT 1 FROM deleted d
+        LEFT JOIN inserted i ON i.BomHeaderId = d.BomHeaderId
+        WHERE d.Status IN ('RELEASED', 'SUPERSEDED')
+          AND (i.BomHeaderId IS NULL
+            OR EXISTS (
+                SELECT i.CompanyCode, i.SiteCode, i.BomRef, i.BomRevision,
+                       i.ParentItemCode, i.ParentRevision, i.Purpose, i.JobRef,
+                       i.VariantCode, i.Description, i.NominalBasis, i.YieldFactor,
+                       i.ProductionQuantum, i.BatchSize, i.IsPhantom, i.CostingLotSize,
+                       i.EffectiveFrom, i.AuthorUser, i.ChangeRef, i.ChangeReason,
+                       i.EngineeringNotes, i.ConsolidateRuns, i.LossIntentNote,
+                       i.SetupCostPerRun, i.ConversionCostPerStart, i.SourceBomHeaderId
+                EXCEPT
+                SELECT d.CompanyCode, d.SiteCode, d.BomRef, d.BomRevision,
+                       d.ParentItemCode, d.ParentRevision, d.Purpose, d.JobRef,
+                       d.VariantCode, d.Description, d.NominalBasis, d.YieldFactor,
+                       d.ProductionQuantum, d.BatchSize, d.IsPhantom, d.CostingLotSize,
+                       d.EffectiveFrom, d.AuthorUser, d.ChangeRef, d.ChangeReason,
+                       d.EngineeringNotes, d.ConsolidateRuns, d.LossIntentNote,
+                       d.SetupCostPerRun, d.ConversionCostPerStart, d.SourceBomHeaderId
+            )
+            OR (ISNULL(i.EffectiveTo, '29991231') <> ISNULL(d.EffectiveTo, '29991231')
+                AND NOT (d.Status = 'RELEASED' AND i.Status = 'SUPERSEDED'
+                         AND i.SupersededByBomHeaderId IS NOT NULL)))
+    )
+    BEGIN
+        ROLLBACK TRANSACTION;
+        THROW 51431, 'STERP-E-BOM0413: a released bill revision is immutable - raise a new revision to change it', 1;
+    END
+END
+GO
 CREATE OR ALTER TRIGGER bom.tr_BomHeaderRetireCheck ON bom.BomHeader
 AFTER UPDATE
 AS
