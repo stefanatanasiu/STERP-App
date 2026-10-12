@@ -52,12 +52,12 @@ Public Class frmSalesOrderEntry
 
     Private Sub LoadOrder()
         Dim order As String = txtOrder.Text.Trim().ToUpperInvariant()
+        ClearOrder()
         If order = "" Then
             SetStatus("Key an order number, or press F2 for the list of orders.", "!  WARNING")
             Return
         End If
         txtOrder.Text = order
-        ClearOrder()
         Guard(Sub()
                   Dim h As DataRow = _svc.Header(order)
                   If h Is Nothing Then
