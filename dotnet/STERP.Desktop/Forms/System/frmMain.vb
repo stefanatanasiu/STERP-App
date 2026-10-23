@@ -236,8 +236,8 @@ Partial Public Class frmMain
         t.Columns.Add("FormClass") : t.Columns.Add("FormArgument") : t.Columns.Add("Shortcut")
         t.Columns.Add("SortOrder", GetType(Integer))
         Dim rows() As String = {
-            "FILE||&File|||10", "SYSTEM||&System|||20", "RPT||&Reports|||120",
-            "WINDOW||&Window|||130", "HELP||&Help|||140",
+            "FILE||&File||||10", "SYSTEM||&System||||20", "RPT||&Reports||||120",
+            "WINDOW||&Window||||130", "HELP||&Help||||140",
             "FILE.COMPANY|FILE|Select &Company / Site...||$COMPANY||10",
             "FILE.EXIT|FILE|E&xit||$EXIT||90",
             "SYS.MAINT|SYSTEM|File Main&tenance...|frmMaintLauncher|||10",

@@ -18,7 +18,7 @@ BEGIN
         RETURN;
     END
 
-    CREATE TABLE #perm (PermissionCode varchar(60) NOT NULL PRIMARY KEY, Allowed bit NOT NULL);
+    CREATE TABLE #perm (PermissionCode varchar(60) COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY, Allowed bit NOT NULL);
     INSERT #perm (PermissionCode, Allowed)
         SELECT DISTINCT PermissionCode, 0 FROM core.MenuItem
         WHERE IsActive = 1 AND PermissionCode IS NOT NULL AND LTRIM(RTRIM(PermissionCode)) <> '';
@@ -37,7 +37,7 @@ BEGIN
     DEALLOCATE perm_cur;
 
     -- visible = not secured, or the user holds the permission
-    CREATE TABLE #vis (MenuCode varchar(40) NOT NULL PRIMARY KEY, ParentMenuCode varchar(40) NULL);
+    CREATE TABLE #vis (MenuCode varchar(40) COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY, ParentMenuCode varchar(40) COLLATE DATABASE_DEFAULT NULL);
     INSERT #vis (MenuCode, ParentMenuCode)
         SELECT m.MenuCode, m.ParentMenuCode
         FROM core.MenuItem m

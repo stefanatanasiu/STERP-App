@@ -48,8 +48,8 @@ IF @dec = 400.00 AND @n = 1 PRINT 'ok 3 - invoiced 400.00 and accrued 200.00 are
 ELSE PRINT 'not ok 3 - invoiced was ' + ISNULL(CONVERT(varchar(20), @dec), 'NULL') + ' -- REQ: PO-017';
 
 /*  4 - the same movements grouped by budget reach the buyer's enquiry. */
-CREATE TABLE #c (GroupKey varchar(60), BudgetCode varchar(20), CostCentre varchar(20),
-                 AccountCode varchar(12), SupplierCode varchar(20), FiscalYear smallint,
+CREATE TABLE #c (GroupKey varchar(60) COLLATE DATABASE_DEFAULT, BudgetCode varchar(20) COLLATE DATABASE_DEFAULT, CostCentre varchar(20) COLLATE DATABASE_DEFAULT,
+                 AccountCode varchar(12) COLLATE DATABASE_DEFAULT, SupplierCode varchar(20) COLLATE DATABASE_DEFAULT, FiscalYear smallint,
                  OpenCommitmentGBP decimal(38,2), AccruedGBP decimal(38,2), InvoicedGBP decimal(38,2),
                  CommittedQty decimal(38,6), OrderCount int, LastMovementDate date);
 BEGIN TRY
@@ -82,14 +82,14 @@ IF @n = 6 PRINT 'ok 6 - overdue schedules report both the original and the curre
 ELSE PRINT 'not ok 6 - only ' + CONVERT(varchar(10), @n) + ' of the 6 lateness columns were found -- REQ: PO-022';
 
 /*  7 - an accepted over delivery leaves no negative outstanding quantity behind. */
-CREATE TABLE #o (OrderNumber varchar(30), OrderType varchar(12), SiteCode varchar(10),
-                 SupplierCode varchar(20), BuyerUser varchar(20), OrderDate date, CurrencyCode char(3),
-                 Status varchar(14), DeliveryStatus varchar(14), MatchStatus varchar(14),
-                 TermsCode varchar(12), TermsSnapshot varchar(100), IncotermsRule varchar(3),
+CREATE TABLE #o (OrderNumber varchar(30) COLLATE DATABASE_DEFAULT, OrderType varchar(12) COLLATE DATABASE_DEFAULT, SiteCode varchar(10) COLLATE DATABASE_DEFAULT,
+                 SupplierCode varchar(20) COLLATE DATABASE_DEFAULT, BuyerUser varchar(20) COLLATE DATABASE_DEFAULT, OrderDate date, CurrencyCode char(3) COLLATE DATABASE_DEFAULT,
+                 Status varchar(14) COLLATE DATABASE_DEFAULT, DeliveryStatus varchar(14) COLLATE DATABASE_DEFAULT, MatchStatus varchar(14) COLLATE DATABASE_DEFAULT,
+                 TermsCode varchar(12) COLLATE DATABASE_DEFAULT, TermsSnapshot varchar(100) COLLATE DATABASE_DEFAULT, IncotermsRule varchar(3) COLLATE DATABASE_DEFAULT,
                  NetAmount decimal(18,2), VatAmount decimal(18,2), GrossAmount decimal(18,2),
-                 CommitmentGBP decimal(18,2), ApprovedBy varchar(20), ApprovedAt datetime2(3),
-                 IssuedAt datetime2(3), AcknowledgedAt datetime2(3), BlanketOrderNumber varchar(30),
-                 BudgetCode varchar(20), LineCount int, OutstandingQty decimal(38,6),
+                 CommitmentGBP decimal(18,2), ApprovedBy varchar(20) COLLATE DATABASE_DEFAULT, ApprovedAt datetime2(3),
+                 IssuedAt datetime2(3), AcknowledgedAt datetime2(3), BlanketOrderNumber varchar(30) COLLATE DATABASE_DEFAULT,
+                 BudgetCode varchar(20) COLLATE DATABASE_DEFAULT, LineCount int, OutstandingQty decimal(38,6),
                  OutstandingGBP decimal(38,2), ReceivedNotInvoicedGBP decimal(38,2),
                  EarliestDueDate date, LatestDueDate date, OverdueLines int, IsCommitment bit);
 BEGIN TRY

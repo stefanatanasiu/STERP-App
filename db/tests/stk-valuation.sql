@@ -88,8 +88,8 @@ BEGIN
     SELECT @n = COUNT(*), @q = MAX(QtyOnHand), @v = MAX(CarryingValueGBP), @a = MAX(AverageUnitCost)
       FROM cst.ItemCost WHERE CompanyCode = 'STC' AND ItemCode = @Item AND SiteCode = @Site AND Revision = @Rev;
     IF @n = 1 AND @q = @Qty AND @v = @Value AND (@Avg IS NULL OR @a = @Avg)
-        PRINT 'ok ' + @No + ' - ' + @Name;
-    ELSE PRINT 'not ok ' + @No + ' - ' + @Name + ' [pools ' + CAST(@n AS varchar(10)) + ', qty '
+        PRINT 'ok ' + @No COLLATE DATABASE_DEFAULT + ' - ' + @Name COLLATE DATABASE_DEFAULT;
+    ELSE PRINT 'not ok ' + @No COLLATE DATABASE_DEFAULT + ' - ' + @Name COLLATE DATABASE_DEFAULT + ' [pools ' + CAST(@n AS varchar(10)) + ', qty '
         + ISNULL(CAST(@q AS varchar(30)), 'NULL') + ', value ' + ISNULL(CAST(@v AS varchar(30)), 'NULL')
         + ', avg ' + ISNULL(CAST(@a AS varchar(30)), 'NULL') + '; expected qty ' + CAST(@Qty AS varchar(30))
         + ', value ' + CAST(@Value AS varchar(30)) + ISNULL(', avg ' + CAST(@Avg AS varchar(30)), '') + ']';

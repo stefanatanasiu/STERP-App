@@ -15,7 +15,7 @@ BEGIN
         RETURN;
     END
 
-    CREATE TABLE #r (ReportCode varchar(20) NOT NULL PRIMARY KEY, Allowed bit NOT NULL);
+    CREATE TABLE #r (ReportCode varchar(20) COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY, Allowed bit NOT NULL);
     INSERT #r (ReportCode, Allowed) SELECT d.ReportCode, 1 FROM core.ReportDef d
         WHERE d.IsActive = 1 AND (@Module IS NULL OR @Module = '' OR d.Module = @Module);
 

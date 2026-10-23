@@ -219,9 +219,9 @@ END CATCH
 /*  13 - a supplier whose name matches the UK sanctions list is a potential match, the decision
     is left pending and trading is blocked until somebody authorised decides (AC-114). */
 BEGIN TRANSACTION;
-CREATE TABLE #s (ScreeningId bigint, CompanyCode varchar(10), PartyType varchar(12), PartyCode varchar(20),
-                 PartyName varchar(120), MatchStatus varchar(12), MatchedEntryId int, MatchedName varchar(120),
-                 MatchScore decimal(9,4), Decision varchar(12), ScreenedAt datetime2(3), Note varchar(400));
+CREATE TABLE #s (ScreeningId bigint, CompanyCode varchar(10) COLLATE DATABASE_DEFAULT, PartyType varchar(12) COLLATE DATABASE_DEFAULT, PartyCode varchar(20) COLLATE DATABASE_DEFAULT,
+                 PartyName varchar(120) COLLATE DATABASE_DEFAULT, MatchStatus varchar(12) COLLATE DATABASE_DEFAULT, MatchedEntryId int, MatchedName varchar(120) COLLATE DATABASE_DEFAULT,
+                 MatchScore decimal(9,4), Decision varchar(12) COLLATE DATABASE_DEFAULT, ScreenedAt datetime2(3), Note varchar(400) COLLATE DATABASE_DEFAULT);
 BEGIN TRY
     INSERT #s EXEC core.usp_ScreenParty @CompanyCode = @co, @PartyType = 'SUPPLIER', @PartyCode = 'ZZSQLGAPB',
         @PartyName = 'Vostok Precision Metals OOO', @Country = 'RU', @UserCode = 'BUYER', @TriggerEvent = 'ONBOARD';
@@ -245,9 +245,9 @@ IF @@TRANCOUNT > 0 ROLLBACK TRANSACTION;
 /*  15 - a clean supplier screens clear and is decided there and then, so the block in 13 is a
     real discrimination and not a blanket refusal. */
 BEGIN TRANSACTION;
-CREATE TABLE #c (ScreeningId bigint, CompanyCode varchar(10), PartyType varchar(12), PartyCode varchar(20),
-                 PartyName varchar(120), MatchStatus varchar(12), MatchedEntryId int, MatchedName varchar(120),
-                 MatchScore decimal(9,4), Decision varchar(12), ScreenedAt datetime2(3), Note varchar(400));
+CREATE TABLE #c (ScreeningId bigint, CompanyCode varchar(10) COLLATE DATABASE_DEFAULT, PartyType varchar(12) COLLATE DATABASE_DEFAULT, PartyCode varchar(20) COLLATE DATABASE_DEFAULT,
+                 PartyName varchar(120) COLLATE DATABASE_DEFAULT, MatchStatus varchar(12) COLLATE DATABASE_DEFAULT, MatchedEntryId int, MatchedName varchar(120) COLLATE DATABASE_DEFAULT,
+                 MatchScore decimal(9,4), Decision varchar(12) COLLATE DATABASE_DEFAULT, ScreenedAt datetime2(3), Note varchar(400) COLLATE DATABASE_DEFAULT);
 BEGIN TRY
     INSERT #c EXEC core.usp_ScreenParty @CompanyCode = @co, @PartyType = 'SUPPLIER', @PartyCode = 'ZZSQLGAPA',
         @PartyName = 'ZZ Test Approved Source Ltd', @UserCode = 'BUYER', @TriggerEvent = 'ONBOARD';

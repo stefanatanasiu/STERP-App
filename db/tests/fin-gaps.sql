@@ -17,10 +17,10 @@ SELECT TOP (1) @fy = FiscalYear FROM fin.Period
 /*  1 - the trial balance balances: what it says was debited was also credited. */
 BEGIN TRY
     BEGIN TRANSACTION;
-    CREATE TABLE #tb (CompanyCode varchar(10), AccountCode varchar(12), AccountName varchar(80),
-        ClassCode varchar(10), ClassType varchar(10), NormalBalance char(2), Statement char(2),
-        StatutoryLineCode varchar(20), StatutoryCaption varchar(100), ManagementGroup varchar(30),
-        ControlType varchar(10), TaxAnalysisFlag varchar(20), BroughtForwardGBP decimal(19,2),
+    CREATE TABLE #tb (CompanyCode varchar(10) COLLATE DATABASE_DEFAULT, AccountCode varchar(12) COLLATE DATABASE_DEFAULT, AccountName varchar(80) COLLATE DATABASE_DEFAULT,
+        ClassCode varchar(10) COLLATE DATABASE_DEFAULT, ClassType varchar(10) COLLATE DATABASE_DEFAULT, NormalBalance char(2) COLLATE DATABASE_DEFAULT, Statement char(2) COLLATE DATABASE_DEFAULT,
+        StatutoryLineCode varchar(20) COLLATE DATABASE_DEFAULT, StatutoryCaption varchar(100) COLLATE DATABASE_DEFAULT, ManagementGroup varchar(30) COLLATE DATABASE_DEFAULT,
+        ControlType varchar(10) COLLATE DATABASE_DEFAULT, TaxAnalysisFlag varchar(20) COLLATE DATABASE_DEFAULT, BroughtForwardGBP decimal(19,2),
         PeriodDebitGBP decimal(19,2), PeriodCreditGBP decimal(19,2), ClosingGBP decimal(19,2),
         ClosingDebitGBP decimal(19,2), ClosingCreditGBP decimal(19,2), LineCount int, ClassSort int);
     INSERT #tb EXEC fin.usp_TrialBalance @CompanyCode = @co, @FiscalYear = @fy,
@@ -94,15 +94,15 @@ BEGIN TRY
     IF @acct IS NULL PRINT 'ok 6 - no posted movement to drill into # SKIP';
     ELSE
     BEGIN
-        CREATE TABLE #act (JournalNumber varchar(30), JournalType varchar(12), SourceModule varchar(6),
-            SourceRef varchar(40), EventCode varchar(30), PostingDate date, DocumentDate date,
-            FiscalYear smallint, PeriodNo tinyint, LineNum int, AccountCode varchar(12),
-            AccountName varchar(80), DebitAmountGBP decimal(19,2), CreditAmountGBP decimal(19,2),
-            CurrencyCode char(3), DebitAmount decimal(19,2), CreditAmount decimal(19,2),
-            DimCostCentre varchar(20), DimProject varchar(20), Narrative varchar(200),
-            VatCode varchar(4), SubledgerType varchar(6), SubledgerRef varchar(40),
-            Description varchar(200), PostedBy varchar(20), PostedAt datetime2(3),
-            EvidenceRef varchar(200), IsReversal bit, ReversalOfJournalId bigint);
+        CREATE TABLE #act (JournalNumber varchar(30) COLLATE DATABASE_DEFAULT, JournalType varchar(12) COLLATE DATABASE_DEFAULT, SourceModule varchar(6) COLLATE DATABASE_DEFAULT,
+            SourceRef varchar(40) COLLATE DATABASE_DEFAULT, EventCode varchar(30) COLLATE DATABASE_DEFAULT, PostingDate date, DocumentDate date,
+            FiscalYear smallint, PeriodNo tinyint, LineNum int, AccountCode varchar(12) COLLATE DATABASE_DEFAULT,
+            AccountName varchar(80) COLLATE DATABASE_DEFAULT, DebitAmountGBP decimal(19,2), CreditAmountGBP decimal(19,2),
+            CurrencyCode char(3) COLLATE DATABASE_DEFAULT, DebitAmount decimal(19,2), CreditAmount decimal(19,2),
+            DimCostCentre varchar(20) COLLATE DATABASE_DEFAULT, DimProject varchar(20) COLLATE DATABASE_DEFAULT, Narrative varchar(200) COLLATE DATABASE_DEFAULT,
+            VatCode varchar(4) COLLATE DATABASE_DEFAULT, SubledgerType varchar(6) COLLATE DATABASE_DEFAULT, SubledgerRef varchar(40) COLLATE DATABASE_DEFAULT,
+            Description varchar(200) COLLATE DATABASE_DEFAULT, PostedBy varchar(20) COLLATE DATABASE_DEFAULT, PostedAt datetime2(3),
+            EvidenceRef varchar(200) COLLATE DATABASE_DEFAULT, IsReversal bit, ReversalOfJournalId bigint);
         INSERT #act EXEC fin.usp_AccountActivity @CompanyCode = @co, @AccountCode = @acct,
             @FiscalYear = @fy, @MaxRows = 5000;
         SELECT @tb = ISNULL(SUM(DebitAmountGBP - CreditAmountGBP), 0) FROM #act;
@@ -167,10 +167,10 @@ BEGIN TRY
     IF @bc IS NULL PRINT 'ok 10 - no budget is seeded # SKIP';
     ELSE
     BEGIN
-        CREATE TABLE #bc (AccountCode varchar(12), AccountName varchar(80), Statement char(2),
-            DimCostCentre varchar(20), BudgetCode varchar(20), BudgetVersion smallint,
+        CREATE TABLE #bc (AccountCode varchar(12) COLLATE DATABASE_DEFAULT, AccountName varchar(80) COLLATE DATABASE_DEFAULT, Statement char(2) COLLATE DATABASE_DEFAULT,
+            DimCostCentre varchar(20) COLLATE DATABASE_DEFAULT, BudgetCode varchar(20) COLLATE DATABASE_DEFAULT, BudgetVersion smallint,
             BudgetGBP decimal(19,2), ActualGBP decimal(19,2), VarianceGBP decimal(19,2),
-            VarianceSense varchar(12), CompareCode varchar(20), CompareVersion smallint,
+            VarianceSense varchar(12) COLLATE DATABASE_DEFAULT, CompareCode varchar(20) COLLATE DATABASE_DEFAULT, CompareVersion smallint,
             CompareGBP decimal(19,2), CompareVarianceGBP decimal(19,2));
         INSERT #bc EXEC fin.usp_BudgetCompare @CompanyCode = @co, @FiscalYear = @fy,
             @BudgetCode = @bc, @PeriodFrom = 1, @PeriodTo = 12;

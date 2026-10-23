@@ -6,8 +6,8 @@ CREATE OR ALTER PROCEDURE core.usp_UiMaintDefList
 AS
 BEGIN
     SET NOCOUNT ON;
-    CREATE TABLE #d (MaintCode varchar(30) NOT NULL PRIMARY KEY, Title varchar(80) NOT NULL,
-                     ModuleCode varchar(10) NOT NULL, PermissionCode varchar(60) NULL, Allowed bit NOT NULL);
+    CREATE TABLE #d (MaintCode varchar(30) COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY, Title varchar(80) COLLATE DATABASE_DEFAULT NOT NULL,
+                     ModuleCode varchar(10) COLLATE DATABASE_DEFAULT NOT NULL, PermissionCode varchar(60) COLLATE DATABASE_DEFAULT NULL, Allowed bit NOT NULL);
     INSERT #d (MaintCode, Title, ModuleCode, PermissionCode, Allowed)
         SELECT d.MaintCode, d.Title, d.ModuleCode, d.PermissionCode, 1
         FROM core.MaintDef d

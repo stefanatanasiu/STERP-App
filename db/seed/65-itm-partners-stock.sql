@@ -1,6 +1,6 @@
 /*  Cost elements, item/partner references, lots and serial numbers, opening stock balances,
     FIFO cost layers and moving weighted average carrying values.  No transactions are posted:
-    these are the authoritative opening positions at cut over (D-18).
+    these are the authoritative opening positions at cut over (D-18), loaded only while cst.ItemCost is empty.
     REQ: ITM-010, ITM-015, ITM-019, ITM-024, CST-005 to CST-009, PO-002, D-04, D-09, D-18 */
 SET NOCOUNT ON;
 GO
@@ -92,7 +92,7 @@ SELECT s.CompanyCode, s.SiteCode, 'MAIN', s.DefaultLocationCode, s.ItemCode, i.C
        0, '2026-09-30T18:00:00', '2026-09-28T16:00:00'
   FROM inv.ItemSite s
   JOIN inv.Item i ON i.CompanyCode = s.CompanyCode AND i.ItemCode = s.ItemCode
- WHERE i.TraceabilityType = 'NONE' AND i.LifecycleStatus = 'RELEASED' AND s.SiteCode IN ('RDG', 'GLA')
+ WHERE i.TraceabilityType = 'NONE' AND i.LifecycleStatus = 'RELEASED' AND s.SiteCode IN ('RDG', 'GLA') AND NOT EXISTS (SELECT 1 FROM cst.ItemCost)
    AND NOT EXISTS (SELECT 1 FROM inv.StockBalance b WHERE b.CompanyCode = s.CompanyCode AND b.SiteCode = s.SiteCode
                      AND b.LocationCode = s.DefaultLocationCode AND b.ItemCode = s.ItemCode AND b.LotCode = '' AND b.SerialNo = '');
 INSERT inv.StockBalance (CompanyCode, SiteCode, WarehouseCode, LocationCode, ItemCode, Revision, LotCode, SerialNo,
@@ -107,7 +107,7 @@ SELECT s.CompanyCode, s.SiteCode, 'MAIN',
   FROM inv.ItemSite s
   JOIN inv.Item i ON i.CompanyCode = s.CompanyCode AND i.ItemCode = s.ItemCode
   JOIN inv.Lot l ON l.CompanyCode = s.CompanyCode AND l.ItemCode = s.ItemCode
- WHERE i.TraceabilityType = 'LOT' AND i.LifecycleStatus = 'RELEASED' AND s.SiteCode IN ('RDG', 'GLA')
+ WHERE i.TraceabilityType = 'LOT' AND i.LifecycleStatus = 'RELEASED' AND s.SiteCode IN ('RDG', 'GLA') AND NOT EXISTS (SELECT 1 FROM cst.ItemCost)
    AND NOT EXISTS (SELECT 1 FROM inv.StockBalance b WHERE b.CompanyCode = s.CompanyCode AND b.SiteCode = s.SiteCode
                      AND b.ItemCode = s.ItemCode AND b.LotCode = l.LotCode AND b.SerialNo = '');
 GO
@@ -118,7 +118,7 @@ SELECT s.CompanyCode, s.ItemCode, 'SN26' + RIGHT(REPLACE(s.ItemCode, '-', ''), 6
   FROM inv.ItemSite s
   JOIN inv.Item i ON i.CompanyCode = s.CompanyCode AND i.ItemCode = s.ItemCode
   CROSS JOIN (VALUES (1), (2), (3), (4)) AS n (Seq)
- WHERE i.TraceabilityType = 'SERIAL' AND i.LifecycleStatus = 'RELEASED' AND s.SiteCode IN ('RDG', 'GLA')
+ WHERE i.TraceabilityType = 'SERIAL' AND i.LifecycleStatus = 'RELEASED' AND s.SiteCode IN ('RDG', 'GLA') AND NOT EXISTS (SELECT 1 FROM cst.ItemCost)
    AND NOT EXISTS (SELECT 1 FROM inv.Serial x WHERE x.CompanyCode = s.CompanyCode AND x.ItemCode = s.ItemCode
                      AND x.SerialNo = 'SN26' + RIGHT(REPLACE(s.ItemCode, '-', ''), 6) + RIGHT('000' + CAST(n.Seq AS varchar(3)), 3));
 INSERT inv.StockBalance (CompanyCode, SiteCode, WarehouseCode, LocationCode, ItemCode, Revision, LotCode, SerialNo,
@@ -126,7 +126,7 @@ INSERT inv.StockBalance (CompanyCode, SiteCode, WarehouseCode, LocationCode, Ite
 SELECT sn.CompanyCode, sn.CurrentSiteCode, 'MAIN', sn.CurrentLocationCode, sn.ItemCode, ISNULL(sn.Revision, 'A'), '',
        sn.SerialNo, 'OWNED', '', 'ACCEPTED', 1, 0, '2026-09-30T18:00:00'
   FROM inv.Serial sn
- WHERE NOT EXISTS (SELECT 1 FROM inv.StockBalance b WHERE b.CompanyCode = sn.CompanyCode AND b.ItemCode = sn.ItemCode
+ WHERE NOT EXISTS (SELECT 1 FROM cst.ItemCost) AND NOT EXISTS (SELECT 1 FROM inv.StockBalance b WHERE b.CompanyCode = sn.CompanyCode AND b.ItemCode = sn.ItemCode
                      AND b.SerialNo = sn.SerialNo);
 /*  Quarantine, inspection and customer owned examples. */
 INSERT inv.StockBalance (CompanyCode, SiteCode, WarehouseCode, LocationCode, ItemCode, Revision, LotCode, SerialNo,
@@ -141,7 +141,7 @@ SELECT 'STC', v.SiteCode, v.Warehouse, v.LocationCode, v.ItemCode, 'A', '', '', 
    ('RDG','SUB','CUSTOWN','DECAL-SET-ROAD','CUSTOMER','C0007','ACCEPTED',300.0),
    ('BHM','SUB','SUBCON01','SA-SEATSTAY-PAIR','OWNED','','ACCEPTED',22.0)
   ) AS v (SiteCode, Warehouse, LocationCode, ItemCode, OwnerType, OwnerCode, Quality, Qty)
- WHERE EXISTS (SELECT 1 FROM inv.Item i WHERE i.CompanyCode = 'STC' AND i.ItemCode = v.ItemCode)
+ WHERE EXISTS (SELECT 1 FROM inv.Item i WHERE i.CompanyCode = 'STC' AND i.ItemCode = v.ItemCode) AND NOT EXISTS (SELECT 1 FROM cst.ItemCost)
    AND NOT EXISTS (SELECT 1 FROM inv.StockBalance b WHERE b.CompanyCode = 'STC' AND b.SiteCode = v.SiteCode
                      AND b.LocationCode = v.LocationCode AND b.ItemCode = v.ItemCode AND b.OwnerType = v.OwnerType);
 GO
@@ -164,7 +164,7 @@ SELECT s.CompanyCode, s.ItemCode, s.Revision, s.LayerSeq,
        ROUND(s.QtyOnHand / 3.0 * s.BaseCost * (1 + 0.02 * s.Seq), 2),
        ROUND(s.QtyOnHand / 3.0 * s.BaseCost * 0.015, 2), 0
   FROM src s
- WHERE NOT EXISTS (SELECT 1 FROM cst.CostLayer l WHERE l.CompanyCode = s.CompanyCode AND l.ItemCode = s.ItemCode
+ WHERE NOT EXISTS (SELECT 1 FROM cst.ItemCost) AND NOT EXISTS (SELECT 1 FROM cst.CostLayer l WHERE l.CompanyCode = s.CompanyCode AND l.ItemCode = s.ItemCode
                      AND l.Revision = s.Revision AND l.LayerSeq = s.LayerSeq);
 INSERT cst.ItemCost (CompanyCode, ItemCode, Revision, SiteCode, CostMethod, QtyOnHand, CarryingValueGBP,
                      AverageUnitCost, StandardUnitCost, LastPurchaseCost, NrvUnitValue, AllowanceGBP, LastUpdatedAt, LastUpdatedBy)
@@ -178,7 +178,7 @@ SELECT b.CompanyCode, b.ItemCode, b.Revision, b.SiteCode, i.CostMethod, SUM(b.Qt
   FROM inv.StockBalance b
   JOIN inv.Item i ON i.CompanyCode = b.CompanyCode AND i.ItemCode = b.ItemCode
   CROSS APPLY (VALUES (ROUND(0.85 + (ABS(CHECKSUM(b.ItemCode)) % 7500) / 100.0, 6))) AS c (BaseCost)
- WHERE b.OwnerType = 'OWNED'
+ WHERE b.OwnerType = 'OWNED' AND NOT EXISTS (SELECT 1 FROM cst.ItemCost)
    AND NOT EXISTS (SELECT 1 FROM cst.ItemCost x WHERE x.CompanyCode = b.CompanyCode AND x.ItemCode = b.ItemCode
                      AND x.Revision = b.Revision AND x.SiteCode = b.SiteCode)
  GROUP BY b.CompanyCode, b.ItemCode, b.Revision, b.SiteCode, i.CostMethod, i.LifecycleStatus, c.BaseCost;

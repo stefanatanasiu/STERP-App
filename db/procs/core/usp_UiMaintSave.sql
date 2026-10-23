@@ -30,7 +30,7 @@ BEGIN
     IF @Mode NOT IN ('ADD', 'CHANGE', 'RETIRE', 'REINSTATE')
         THROW 50094, 'STERP-E-0094: Unknown maintenance action.', 1;
 
-    CREATE TABLE #v (ColumnName sysname NOT NULL PRIMARY KEY, Val nvarchar(400) NULL, IsNull bit NOT NULL);
+    CREATE TABLE #v (ColumnName sysname COLLATE DATABASE_DEFAULT NOT NULL PRIMARY KEY, Val nvarchar(400) COLLATE DATABASE_DEFAULT NULL, IsNull bit NOT NULL);
     INSERT #v (ColumnName, Val, IsNull)
         SELECT x.value('@n', 'sysname'), x.value('@v', 'nvarchar(400)'),
                ISNULL(x.value('@null', 'bit'), 0)
