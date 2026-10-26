@@ -1,4 +1,4 @@
-# STERP - Stefan's ERP
+# STERP
 
 **UK supply-chain ERP (legacy edition)**
 
